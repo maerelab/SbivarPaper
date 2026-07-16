@@ -1,0 +1,2956 @@
+---
+title: "Supplementary material for 'Statistical tests for bivariate spatial association across multi-omics data with disjoint coordinates'"
+author: "Stijn Hawinkel, Wangjun Hu, Britta Velten and Steven Maere"
+output: 
+  pdf_document:
+    number_sections: true
+    keep_tex: yes
+    includes:
+            in_header: stxRes.sty
+---
+
+\beginsupplement{0}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  cache = TRUE, autodep = TRUE, warning = FALSE, dpi = 125,
+  cache.lazy = FALSE, message = FALSE, echo = FALSE,
+  eval = TRUE, tidy = TRUE, fig.width = 8, fig.height = 5,
+  purl = TRUE, fig.pos = "p"
+)
+libs <- c(
+  "ggplot2", "reshape2", "xtable", "knitr", "gplots", "openxlsx", "patchwork",
+  "parallel", "dplyr", "Matrix", "RANN", "SpatialPack", "stringr", "mvtnorm", "spdep", "ggh4x",
+  "nlme", "NTSS", "peakRAM", "gstat", "SpaGene", "rhdf5", "anndata", "Cardinal", "sbivar", "Seurat", "smoppix", "fdrtool", "nleqslv", "httr", "bispdep", "jsonlite", "spatstat", "lmerTest", "abind"
+)
+for (i in libs) {
+  suppressPackageStartupMessages(library(i, character.only = TRUE, quietly = TRUE))
+}
+rm(i, libs)
+for (i in list.files("R")) {
+  source(file.path("R", i))
+}
+rm(i)
+theme_set(theme_bw())
+sigLevel <- 0.05
+nCores <- 2
+register(MulticoreParam(nCores))
+# Create folders to store the graphs, data and results
+foo <- lapply(c("GraphsPaper", "Results", "Data", "Data/Godfrey2025", "Data/Vicari2024", "Data/Vicari2024/Stx", "Results/landmarks/"), dir.nw)
+```
+
+```{r defineLabels}
+spatPats <- selfName(c("none", "singleGradient", "orthogonalGradient", "independentGPs", "independentZones", "independentStreak", "dependentGPs", "dependentGPsNeg", "dependentGPsnoSAC", "sharedGradient", "oppositeGradient", "dependentStreak", "oppositeStreak", "dependentZones", "oppositeZones", "dependentStreakGPs", "dependentZonesGPs"))
+spatPatsShow <- selfName(c("none", "independentGPs", "dependentGPs", "dependentZones", "dependentStreak", "dependentStreakGPs", "dependentZonesGPs"))
+spatPatsLabels <- c("No spatial pattern", "Single gradient", "Orthogonal gradients", "Independent GPs", "Independent zones", "Perpendicular streak", "Dependent GPs", "Depedent GPs\n(negative)", "Dependent GPs\n(no SAC)", "Shared gradient", "Opposite gradient", "Streak", "Opposite streak", "Zones", "Opposite zones", "Streak + GPs", "Zones + GPs")
+spatPatsShowLabels <- spatPatsLabels[match(spatPatsShow, spatPats)]
+powerColours <- c("chartreuse3", "darkgreen", "black", "aquamarine3", "orange", "bisque", "darkslategray4", "bisque3", "cyan", "grey25", "magenta", "pink", "darkgoldenrod3", "brown", "red", "blue", "darkorchid3")
+methLevels <- c("MoransI_Czaplewski", "MoransI_permutation", "MoransI_SpatialDM", "MoransI_RandomShift", "LeesL_asymptotic", "LeesL_permutation", "GearysC_permutation", "GearysC_randomisation", "SpaGene", "SpaceBF", "PearsonCor", "modTtest", "RandomShift", "MoransI_sbivar", "GP", "GAM", "GAMM")
+methLabels <- c("Moran's I (randomisation)", "Moran's I (permutation)", "Moran's I (SpatialDM)", "Moran's I (random shift)", "Lee's L (randomisation)", "Lee's L (permutation)", "Geary's C (permutation)", "Geary's C (randomisation)", "SpaGene", "SpaceBF", "Pearson correlation", "Modified t-test", "Kendall's correlation\n(random shift)", "Moran's I (independence) [sbivar]", "Bivariate GPs [sbivar]", "GAMs [sbivar]", "GAMMs [sbivar]")
+methLabelsShow <- c("Moran's I (randomisation)", "Moran's I (permutation)", "Moran's I (SpatialDM)", "Moran's I (random shift)", "SpaGene", "SpaceBF", "Lee's L (randomisation)", "Geary's C (permutation)", "Pearson correlation", "Modified t-test", "Kendall's correlation\n(random shift)", "Moran's I (independence) [sbivar]", "Bivariate GPs [sbivar]", "GAMs [sbivar]", "GAMMs [sbivar]")
+names(powerColours) <- methLabels
+scrambleLabels <- c("Transcriptomics", "Metabolomics", "Transcriptomics +\nMetabolomics")
+scrambleVec <- selfName(c("Stx", "Met", "Stx_Met"))
+timeLabels <- c("Runtime (in seconds)", "Peak RAM usage (in MB)")
+timeLevels <- c("Elapsed_Time_sec", "Peak_RAM_Used_MiB")
+```
+
+\tableofcontents
+
+# Algorithms
+
+## Existing algorithms
+
+### Bivariate Moran's I \label{sec:moransI}
+
+The bivariate Moran's I is defined for two vectors $\mb x$ and $\mb y$ as $I_{xy} = \sum_{i=1}^n\sum_{j=1}^mw_{ij}x_iy_j = \mb x^t \mb W \mb y$. When testing only for spatial association between spots, under the randomisation null hypothesis for joint coordinate sets, $I_{xy}$ has an expected value of $E(I_{xy}) = \frac{\Cor{x, y}}{(n-1)}$ \parencite{Czaplewski1993}. If zero correlation within the same spots is also considered part of the null hypothesis, as we do throughout the article, than the expectation equals 0. Several versions of the variance of bivariate Moran's I exist for the case of joint coordinate sets. \textcite{Czaplewski1993} provides the variance under the randomisation null hypothesis. \textcite{Li2023} provides a variance assuming no SAC in either outcome variable in their \textit{SpatialDM} method, as do \textcite{DeTomaso2021}. \textcite{Miller2021} employ the bivariate Moran's I in their \textit{MERINGUE} method, using permutations to determine significance, as does \textcite{Wartenberg1985}.
+
+### The modified t-test \label{sec:modTtest}
+
+Pearson correlation after spot matching or aggregation is commonly used to test for spatial association in multi-omics studies \parencite{Vicari2024, Godfrey2025, Ravi2022}, although it is known that such test must account for SAC to be valid \parencite{Lennon2000}. The most common correction is the modified t-test, correcting the degrees of freedom of the t-test and thus the variance estimate of the Pearson correlation estimate $\hat{\rho}_{xy}$ based on SAC in the two variables \parencite{Clifford1989, Dutilleul1993, Dutilleul2008}. The variance of $\hat{\rho}_{xy}$ is given by $(n-1)^{-2}tr(\bs\Sigma_x\bs\Sigma_y)$, with $\bs\Sigma_x$ and $\bs\Sigma_y$ the spatial autocorrelation matrices of *x* and *y*, respectively, and $tr(.)$ the trace function \parencite{Dutilleul2008,Clifford1989}.
+
+### Other measures of spatial association
+
+SpaGene by \parencite{Liu2022b} defines its own measure of spatial colocalisation based on k-nearest neighbour networks, and determines significance through permutations. \textcite{Seal2026} notice problems with autocorrelation in simulations, and present their method SpaceBF to account for SAC in a Bayesian framework. Yet we found this method too slow to be applied in our simulations or on real spatial omics data. \textcite{Lee2001} presents Lee's L as measure of spatial association for joint coordinate sets. \textcite{Bivand2018} generalised Geary's C for the bivariate case of joint coordinate sets. To determine significance for any test statistic while accounting for SAC, custom permutation schemes have been developed that test the independence null hypothesis: the so-called "random-shift" tests \parencite{Mrkvicka2021, Ridder2024}. These involve shifting both images with respect to each other, which retains SAC, calculating the association measure based on the regions that still overlap, and correcting their variance for the reduction in overlap area.
+
+## New algorithms
+
+### Bivariate Moran's I under the independence null hypothesis \label{sec:MoransI}
+
+#### Expectation
+
+Under the independence null hypothesis, implying no correlation within the same measurement spots, for both joint and disjoint coordinate sets, bivariate Moran's I has expectation zero:
+
+\begin{equation}
+\begin{aligned}
+E(I_{xy}) &= E\left(\sum_{i=1}^n\sum_{j=1}^mw_{ij}x_iy_j \right)\\
+&= \sum_{i=1}^n\sum_{j=1}^mw_{ij}E\left(x_iy_j \right)=0
+\end{aligned}
+\label{eq:expMoran}
+\end{equation}
+
+#### Maximum absolute value
+
+The lower and upper bounds of the bivariate Moran's I statistic are dependent on the weight matrix and usually not -1 and 1. Instead, they depend on the largest singular value of the weight matrix as follows. The problem is to find **x** and **y** that maximize $I_{xy} = \mb x^t \mb W \mb y$ for fixed **W** and subject to $\mb x^t\mb x = n-1$ and $\mb y^t\mb y = m-1$. Given the singular value decomposition $\mb U \Upsilon \mb V^t$ of **W**, with $r=\text{min}(n,m)$ and $\Upsilon$ the diagonal matrix of singular values, this amounts to optimizing $\mb x^t \mb W \mb y = \mb x^t \mb U \Upsilon \mb V^t \mb y$. The columns of **U** and **V** being orthonormal, and $\upsilon_1 \geq \upsilon_2 \geq \hdots\geq \upsilon_r$, this measure is optimized when $\mb x$ aligns perfectly with the first column of **U** ($\mb u_1$), and $\mb y$ with the first column of **V** ($\mb v_1$), achieving $\sqrt{(n-1)(m-1)}\upsilon_1$ as maximum value. By symmetry, the minimum is achieved when $\mb x = -\mb u_1$ and $\mb y = \mb v_1$ (or $\mb x = \mb u_1$ and $\mb y = -\mb v_1$), which is $-\sqrt{(n-1)(m-1)}\upsilon_1$. It may be useful to scale $I_{xy}$ values by their maximum absolute value $\sqrt{(n-1)(m-1)}\upsilon_1$ to render them comparable across sections with different measurements grids and corresponding weight matrices.
+
+#### Variance
+
+The expectation and maximum absolute value are the same under the randomisation and independence null hypotheses, but the variance differs as it is affected by SAC, as derived in \eqref{eq:varMoranNum} in the main paper. We estimate the SAC matrices nonparametrically using Matheron’s variogram estimator \parencite{Matheron1963} following \textcite{Dutilleul2008}. Next we fit linear and exponential functions through the estimate variogram using the \textit{fit.variogram} function in the \textit{gstat} R-package \cite{Pebesma2004}, fixing the sill to 1, and retain the fits ($\hat{\sigma}_x$ and $\hat{\sigma}_y$) with the smallest mean squared error loss. Then we plug the covariance as a function of distance $\hat{\sigma}_x(d_{ij})$ and $\hat{\sigma}_y(d_{kl})$ into \eqref{eq:varMoranNum} in the main paper, to yield $\widehat{\text{Var}}(I_{xy}) = \sum_{i=1}^n\sum_{j=1}^m\sum_{k=1}^n\sum_{l=1}^mw_{ij}w_{kl}\hat{\sigma}_x(d_{ij})\hat{\sigma}_y(d_{kl})$. This equals $\widehat{\text{Var}}(I_{xy}) = tr(\mb W^t \bs \Sigma_x \mb W \bs \Sigma_y)$, with $\Sigma_x$ and $\Sigma_x$ the autocovariance matrices built by evaluating the covariance functions in the observed distance matrices. The formula for joint coordinate sets is the same; we do not distinguish between association within the same coordinates and between nearby coordinates, the former ones simply get the highest weight.
+
+#### Empirical distribution \label{sec:empDistr}
+
+For significance testing on $I_{xy}$ we the assume that $\frac{I_{xy}}{\sqrt{\widehat{\text{Var}}(I_{xy})}}$ is asymptotically standard normal. This is justified by the current multi-omics technologies generating thousands of spots per image, and by theoretical results on univariate Moran's I \parencite{Kelejian2001}. We verify this assumption empirically in a small simulation study in the 'none' scenario from the parametric simulations with disjoint coordinate sets, revealing approximate normality of the statistic (\fref{fig:qqnormMoran}).
+
+```{r parSetup}
+xMin <- 0
+xMax <- 1
+nSims <- 5e1
+nPerms <- 3e2
+corVals <- c(1, 0.25)
+csGaus <- corGaus(form = ~ x + y, nugget = TRUE, value = corVals) # Gaussian correlation structure
+optControl <- nlme::lmeControl(
+  opt = "optim", maxIter = 5e2, msMaxIter = 5e2,
+  niterEM = 1e3, msMaxEval = 1e3
+)
+Nugs <- c(0.25, 0.25)
+Rangs <- c(0.15, 0.15, 0.15)
+Sigs <- c(0.75, 0.75, 0.15)
+samSizesJoint <- c(20^2, 25^2, 30^2, 35^2, 40^2, 45^2)
+nFeats <- 10
+jointGrid <- expand.grid(stringsAsFactors = FALSE, "spatPats" = spatPatsShow, "rep" = seq_len(nSims))
+featGrid <- expand.grid("i" = seq_len(nFeats), "j" = seq_len(nFeats))
+propFeatNull <- 0.2
+```
+
+```{r bivMoranDistr, dpi = 300, fig.cap = "Normal QQ-plot of 10,000 bivariate Moran's I statistics generated under the 'none' scenario with $\\eta=0.0001$.\\label{fig:qqnormMoran}", fig.width = 3.5, fig.height = 4}
+n <- 400
+m <- 900
+xMat <- makeCoordGrid(n, xMin, xMax)
+yMat <- makeCoordGrid(m, xMin + 0.03, xMax + 0.03)
+wm <- sbivar:::buildWeightMat(xMat, yMat, wo = "Gauss", eta = 1e-4)
+Ixys <- vapply(integer(1e4), FUN.VALUE = 0, function(i) {
+  c(scale(rnorm(n))) %*% wm %*% c(scale(rnorm(m)))
+})
+qqnorm(Ixys, main = "", cex = 0.6)
+qqline(Ixys)
+rm(wm, Ixys)
+```
+
+```{r plotMoranPaper, include = FALSE}
+n_low <- 4^2
+n_high <- 7^2
+tmp <- seq(0.05, 1, length.out = sqrt(n_high))
+high_res <- expand.grid(x = tmp, y = tmp)
+high_res$tech <- "High-resolution"
+n_low <- n_high / 4
+low_res <- data.frame(
+  x = seq(0.075, 0.925, length.out = sqrt(n_low)),
+  y = seq(0.075, 0.925, length.out = sqrt(n_low))
+)
+low_res <- expand.grid(x = low_res$x, y = low_res$y)
+low_res$tech <- "Low-resolution"
+low_res$x <- low_res$x + 0.01 
+low_res$y <- low_res$y + 0.02
+df <- rbind(high_res, low_res)
+target <- low_res[aaa <- 13, , drop = FALSE]
+distances <- sqrt((high_res$x - target$x)^2 + (high_res$y - target$y)^2)
+decay_param <- 5.8 
+weights <- exp(-decay_param * distances)
+high_res <- high_res %>%
+  mutate(weight = weights / sum(weights))
+segments <- high_res %>%
+  mutate(
+    x_start = target$x,
+    y_start = target$y
+  )
+pMoran <- ggplot() +
+  geom_segment(
+    data = segments,
+    aes(x = x_start, y = y_start, xend = x, yend = y, linewidth = weight, alpha = weight),
+    color = "gray30"
+  ) +
+  geom_point(
+    data = high_res,
+    aes(x, y),
+    color = "blue",
+    size = 1.2,
+    alpha = 0.6
+  ) +
+  geom_point(
+    data = target,
+    aes(x, y),
+    shape = 21, alpha = 0.6,
+    fill = "red",
+    color = "black",
+    size = 3.1,
+    stroke = 0.5
+  ) +
+  geom_point(
+    data = low_res[-aaa, ],
+    aes(x, y),
+    shape = 21, alpha = 0.2,
+    fill = "red",
+    color = "black",
+    size = 3.1,
+    stroke = 0.1
+  ) +
+  scale_size_continuous(range = c(0.1, 2.5), guide = "none") +
+  scale_alpha_continuous(range = c(0.05, 0.8), guide = "none") +
+  coord_fixed() +
+  theme_minimal(base_size = 14) +
+  labs(x = "Coordinate 1", y = "Coordinate 2") +
+  theme(axis.title = element_text(size = 11.2), axis.text = element_text(size = 8.5))
+ggsave(pMoran, file = "GraphsPaper/plotMoran.pdf", width = 2.25, height = 2.25)
+rm(pMoran, segments, df, high_res, low_res, newGrid)
+```
+
+#### The weight function \label{sec:weightFun}
+
+The choice of weight matrix **W** determines the power of tests based on bivariate Moran's I. The three different weight functions tested by default, for coordinate matrices shifted and scaled to the unit square with corners $(0,0)^t$, $(0,1)^t$, $(1,1)^t$ and $(1,0)^t$, are illustrated in \fref{fig:weight}. The p-values from the different weight matrices are combined into one p-value through the Cauchy combination test \parencite{Liu2022b}.
+
+```{r weightFun, fig.cap = "Illustration of weighting functions used for constructing the weight matrix used for a number of association metrics, including bivariate Moran's I.\\label{fig:weight}", fig.height =3.5, fig.width = 5}
+etas <- eval(formals(sbivar:::sbivarSingle)$etas)
+exploreWeights(etas)
+```
+
+#### The random-shift null distribution \label{sec:MoranRandomShift}
+
+As an alternative to our analytical derivation of the variance and normality assumption, we adapt the random shift tests by \textcite{Mrkvicka2021, Ridder2024} to the bivariate Moran's I, and approximate its null distribution under the independence null hypothesis as follows. First the coordinate matrices are moved and scaled to the unit square. The weight matrix and observed bivariate Moran's I are calculated as before. Next a point is drawn uniformly on a disc of radius 0.5 centered in the origin, defining a vector $\mb v$ from the origin to this point. Define a shifted window with corners $(0,0)^t+\mb v$, $(0,1)^t+\mb v$, $(1,1)^t+\mb v$ and $(1,0)^t+\mb v$, and find the subsets $\mb C_-$ and $\mb E_-$ of sizes $n_-$ and $m_-$ within the shifted window. Shift $\mb C_-$ in the reverse direction to obtain $\mb C^\ast_- = \mb C_- - \mb v$. Calculate bivariate Moran's I $I_{xy-}$ with coordinates $\mb C^\ast_-$ and $\mb E_-$ and corresponding observations, and scale it to $I_{xy-}\sqrt{n_-m_-}$ to account for the variance inflation due to subsetting. Repeat this procedure $B$ times by drawing more instances $\mb v$ on the disc to build a null distribution for the scaled bivariate Moran's I statistic $I_{xy}\sqrt{nm}$. Following \textcite{Phipson2010}, then calculate $Q = \frac{1+\sum_{b=1}^B I\left(I_{xy}\sqrt{nm} > I_{xy-}^b\sqrt{n^b_-m^b_-}\right)}{B+1}$ with $I(.)$ the indicator function, and the p-values as $2\times\text{min}(Q, 1-Q)$.
+
+### Bivariate Gaussian processes (GPs) \label{sec:GP}
+
+#### Derivation of the score test
+
+The GP score test statistic *U* was defined in \eqref{eq:Ustat} in the main text. It tests the null hypothesis that $\tau$, the variance of the random effect engendering the bivariate association, equals 0. Under the null, *U* asymptotically follows a mixture of chi-squared distributions, which can be approximated using the Satterwaithe method by a scaled chi-squared distribution $\kappa \chi^2_\nu$ \parencite{Zhang2003, Kats2021}. Call $e = 0.5 tr\left(\mb P^{-1}\bs\Sigma^{biv}\right)$ and the Fisher information matrix $I_{\tau\tau} = 0.5tr\left((\mb P^{-1}\bs\Sigma^{biv})^2\right)$ with $\mb A$ the design matrix, $\mb P = \bs\Sigma_\ast^{-1} - \bs\Sigma_\ast^{-1}\mb A (\mb A^t \bs\Sigma_\ast^{-1} \mb A)^{-1}\mb A^t\bs\Sigma_\ast^{-1}$, then $\kappa = I_{\tau\tau}/(2e)$ and $\nu = 2e^2/I_{\tau\tau}$ \parencite{Kats2021, Zhang2003}. \textcite{Zhang2003} recommend to use the efficient information $\tilde{I}_{\tau\tau} = I_{\tau\tau} - I_{\tau\bs\theta}I_{\bs\theta\bs\theta}^{-1}I_{\tau\bs\theta}^t$ rather than $I_{\tau\tau}$ with $\bs\theta$ the vector of (co)variance parameters of length $g$ defining $\bs\Sigma_\ast$. For the typical geostatistics parametrisation, used for instance in the *gls* function in the *nlme* R-package \parencite{Pinheiro2000} this is $\bs\theta^t = (\sigma_x^2, \sigma_y^2, \pi_x, \pi_y, l_x, l_y)$ with $\sigma^2_x$ the variance, $\pi_x$ the nugget and $l_x$ the length scale of the x-variable, and analogously for the y-variable. Here we use the Gaussian covariance function $\Cov{x_i, x_j} = \sigma_x^2\left(\pi_xI(d_{ij}=0) + (1-\pi_x) \exp\left[-(\frac{d_{ij}}{l_x})^2\right]\right)$ with $d_{ij}$ the distance between observations $i$ and $j$. Further $I_{\tau\bs\theta} = 0.5tr(\bs\Sigma_\ast^{-1}\bs\Sigma^{biv}\bs\Sigma_\ast^{-1}\frac{\partial\bs\Sigma_\ast}{\partial \bs\theta})$ and $I_{\bs\theta\bs\theta} = 0.5tr(\bs\Sigma_\ast^{-1}\frac{\partial\bs\Sigma_\ast}{\partial \bs\theta}\bs\Sigma_\ast^{-1}\frac{\partial\bs\Sigma_\ast}{\partial \bs\theta})$ \parencite{Zhang2003}. Unlike in the simple univariate case in e.g. *SpatialDE2* by \textcite{Kats2021} where $\bs\theta = \sigma^2_x$, here $\frac{\partial\bs\Sigma_\ast}{\partial \bs\theta}$ is a $h\times h\times g$ tensor. The traces are here taken over the first two dimensions only, meaning the trace is applied over matrix slices of dimensions $h\times h$, such that $I_{\bs\theta\bs\theta}$ is a $g\times g$ matrix and $I_{\tau\bs\theta}$ a vector of length $g$. Also the matrix multiplications $\bs\Sigma_\ast^{-1}\frac{\partial\bs\Sigma_\ast}{\partial \bs\theta}$ are done one matrix at a time to yield tensors again. We now find the derivatives $\frac{\partial\bs\Sigma_\ast}{\partial\bs\theta}$ for on-diagonal elements as
+
+\begin{equation}
+\begin{aligned}
+&\frac{\partial\Sigma_{\ast ii}}{\partial\sigma_x} = 2\sigma_x\\
+&\frac{\partial\Sigma_{\ast ii}}{\partial\pi_x} = 0\\
+&\frac{\partial\Sigma_{\ast ii}}{\partial l_x} = 0,\\
+\end{aligned}
+\label{eq:diagGeo}
+\end{equation}
+
+and for off-diagonal elements
+
+\begin{equation}
+\begin{aligned}
+&\frac{\partial\Sigma_{\ast ij}}{\partial\sigma_x} = 2\sigma_x \exp\left[-(d_{ij}/l_x)^2\right](1-\pi_x)\\
+&\frac{\partial\Sigma_{\ast ij}}{\partial\pi_x} = -\sigma_x^2\exp\left[-(d_{ij}/l_x)^2\right](1-\pi_x)\\
+&\frac{\partial\Sigma_{\ast ij}}{\partial l_x} = 2\sigma_x^2(1-\pi_x)\exp\left[-(d_{ij}/l_x)^2\right]\frac{d_{ij}^2}{l_x^3}.
+\end{aligned}
+\label{eq:OffDiagGeo}
+\end{equation}
+
+Switching covariance kernels implies revisiting these expressions. The test is designed for univariate GPs estimated by restricted maximum likelihood (REML), e.g. with the *gls* function in the *nlme* package \parencite{Pinheiro2000}, which separates mean from covariance estimation. For speedup, one could instead use the *gpytorch* python package to fit the univariate GPs, on CPU as well as with GPU acceleration \parencite{Gardner2018}. It is then crucial not to estimate the mean freely as default in *gpytorch*, but instead fix it to the empirical mean to approximate the REML outcome. Yet for the final computation time the GPU acceleration is of little importance, as calculating the test statistic *U* and its variance takes up most of the computation time. Hence GPU acceleration is not included in the *sbivar* package.
+
+```{r plotCovaMatsPaper, include = FALSE}
+nPlot <- 20
+mPlot <- 12
+xMatPlot <- makeCoordGrid(nPlot, 0, 1)
+yMatPlot <- makeCoordGrid(mPlot, 0, 1)
+distMat <- as.matrix(stats::dist(rbind(xMatPlot, yMatPlot)))
+hPlot <- nPlot + mPlot
+rangeFactor <- 20
+nugFactor <- 0.8
+nullSigma <- bdiag(
+  buildSigmaGp(c("range" = Rangs[1] * rangeFactor, "nugget" = Nugs[1] * nugFactor, "sigma" = Sigs[1]), distMat = as.matrix(dist(xMatPlot))),
+  buildSigmaGp(c("range" = Rangs[2] * rangeFactor, "nugget" = Nugs[2] * nugFactor, "sigma" = Sigs[2]), distMat = as.matrix(dist(yMatPlot)))
+)
+lscAlt <- mean(Rangs) * rangeFactor
+altSigma <- {
+  tmpAlt2 <- sparseMatrix(i = rep(seq_len(nPlot), times = mPlot), j = rep(seq_len(mPlot) + nPlot, each = nPlot), dims = c(hPlot, hPlot), symmetric = TRUE, x = c(exp(-(distMat[seq_len(nPlot), seq_len(mPlot) + nPlot] / lscAlt)^2)))
+  diag(tmpAlt2) <- 1
+  tmpAlt2
+}
+pdf("GraphsPaper/covMats.pdf", width = 4.15, height = 1.7)
+par(mfrow = c(1, 3), mar = c(0.6, 0.6, 1.5, 0.6))
+image(diag(hPlot)[rev(seq_len(hPlot)), ], main = "Independence", asp = 1, axes = FALSE)
+image(as.matrix(nullSigma)[rev(seq_len(hPlot)), ], main = "SAC", asp = 1, axes = FALSE)
+image(as.matrix(altSigma)[rev(seq_len(hPlot)), ], main = "Bivariate", asp = 1, axes = FALSE)
+par(mfrow = c(1, 1))
+dev.off()
+rm(altSigma, nullSigma, tmpAlt2, xMatPlot, yMatPlot)
+```
+
+#### The score test for other outcome distributions
+
+The score test can be generalized to other outcome distributions and link functions, although this is currently not implemented in the \sbivar package. Building on \textcite{Zhang2003, Kats2021}, \eqref{eq:Ustat} then becomes
+
+\begin{equation}
+U = 1/2\left((\mb z^\ast - \bs \mu)^t \bs\Delta \mb K^{-1} \bs\Sigma^{biv} \mb K^{-1} \bs\Delta(\mb z^\ast - \bs \mu)\right).
+\label{eq:Ustatcount}
+\end{equation}
+
+For count distributions where the variance equals the mean, this becomes $\bs\Delta = \diag(g'(\bs\mu)) = \diag(\bs\mu)^{-1}$ and $\mb K = g'(\bs\mu) \bs\Sigma^\ast g'(\bs\mu)^t = \diag(\bs\mu)^{-1}$ and $g$ the link function. $\mb z^\ast = \frac{z-\bs\mu}{\bs\mu}$ is the working vector under the null.
+
+### Generalized additive models (GAMs)\label{sec:GAMs}
+
+We extend the bivariate test based on GAMs proposed in the main text to other outcome distributions and link functions. The models for the mean can then be written with the link functions $g$ and $h$ as
+
+\begin{equation}
+\begin{aligned}
+g(E(x_i)) &= \beta_{0x} + s_x(\mb c_i) \\
+h(E(y_j)) &= \beta_{0y} + s_y(\mb e_j).
+\end{aligned}
+\label{eq:splinesE}
+\end{equation}
+
+Call $\iota_i =s_x(\mb c_i)$ and $\zeta_j =s_x(\mb e_j)$. The covariance estimate is then $q_{xy} = (B-1)^{-1}\sum_{b=1}^B (\iota_b - \bar{\iota})(\zeta_b-\bar{\zeta})$, with gradient $\nabla q_{xy}^t = \left(\frac{\partial q_{xy}}{\partial \iota_1}, \frac{\partial q_{xy}}{\partial \iota_2}, \hdots, \frac{\partial q_{xy}}{\partial \iota_B}, \frac{\partial q_{xy}}{\partial \zeta_1}, \frac{\partial q_{xy}}{\partial \zeta_2}, \hdots, \frac{\partial q_{xy}}{\partial \zeta_B}\right)$. The variance-covariance matrix of $\bs \iota$ is given by $\nabla \hat{\bs \iota}^t \bs\Phi_x \nabla \hat{\bs \iota}$ with $\nabla \hat{\bs \iota}^t= \left(\frac{\partial \hat{\bs \iota}}{\partial \beta_1}, \frac{\partial \hat{\bs \iota}}{\partial \beta_2}, \hdots, \frac{\partial\hat{\bs \iota}}{\partial \beta_h}\right)$, in which $\frac{\partial \hat{\bs \iota}}{\partial \beta_1} = (g^{-1})'(\beta_0 + \mb H_{x}\bs\beta_x + g_x(\mb c_i))\mb H_{1x}$ and $\bs\Phi_x$ the variance-covariance matrix of the thin plate spline coefficients $\bs\beta_x$. The variance of the correlation coefficient can be approximated by
+
+\begin{equation}
+\Var{\hat{q}_{xy}} \approx \nabla q_{xy}^t \nabla \hat{\mb z}^t \bs\Phi\nabla \hat{\mb z} \nabla q_{xy},
+\label{eq:varLink}
+\end{equation}
+
+with $\bs\Phi$ a block diagonal matrix of $\bs\Phi_x$ and $\bs\Phi_y$, and $\hat{\mb z}^t = (\hat{\bs \iota}^t, \hat{\bs \zeta}^t)$. \eqref{eq:varLink} simplifies to \eqref{eq:varq} in the main text for the identity link.
+
+```{r plotSplinesPaper, include = FALSE}
+dat <- makeXY(xMat, yMat, nSims = 1, what = "dependentStreak", boundsBetas = c(3, 3))
+colnames(dat$x)[1] <- "x"
+colnames(dat$y)[1] <- "y"
+plotGAMs(dat$x, dat$y, xMat, yMat,
+  n_points = 500, addTitle = FALSE,
+  features = c("x", "y")
+) +
+  labs(x = "Coordinate 1", y = "Coordinate 2")
+ggsave(file = "GraphsPaper/plotSplines.pdf", width = 6, height = 2.5)
+rm(dat)
+```
+
+\clearpage
+
+# Simulation studies
+
+## Setup
+
+\fref{fig:design} shows the grids at which outcomes are generated in the parametric simulation studies, \fref{fig:designs} illustrates the spatial outcome patterns generated and \fref{fig:univMoransIdesign} the resulting univariate Moran's I. The coordinates of the \textit{MAGPIE} alignments with jittered landmarks of the Vicari data are shown in \fref{fig:alignJitter}.
+
+```{r design, fig.cap = "Spot grids for the parametric simulation study. The black squares are the locations of the spots of the first modality (X) and of the second (Y) for joint coordinate sets, the blue crosses the locations of the second modality (Y) for disjoint coordinate sets.\\label{fig:design}", fig.height = 4.5, fig.width = 4.5}
+plotxy(xMat, yMat, pchY = "+", cex = 0.8)
+```
+
+```{r plotDesigns, fig.cap = "Visualisation of the different designs (rows) and outcomes (columns) for the parametric simulation study with disjoint coordinate sets.\\label{fig:designs}", fig.height = 10.5}
+B <- 25^2
+xB <- seq(0, 1, length.out = sqrt(B))
+newGrid <- expand.grid(x = xB, y = xB)
+# Ranges must be a lot shorter than dimensions of the image
+designs <- Reduce(lapply(spatPatsShow, function(w) {
+  dat <- makeXY(xMat, yMat,
+    what = w, nSims = 2,
+    nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+  )
+  dat <- c(scaleZeroOne(dat$x[, 1]), scaleZeroOne(dat$y[, 1]))
+  data.frame(
+    Outcome = unlist(dat), variable = rep(c("X", "Y"), times = c(n, m)),
+    pattern = w, rbind(xMat, yMat)
+  )
+}), f = rbind)
+designs$pattern <- factor(designs$pattern,
+  labels = spatPatsLabels,
+  levels = spatPats, ordered = TRUE
+)
+ggplot(data = designs, aes(x = x, y = y, col = Outcome)) +
+  geom_point(size = 1.1) +
+  coord_fixed() +
+  facet_grid(pattern ~ variable) +
+  scale_colour_gradient(low = "yellow", high = "blue") +
+  xlab("Coordinate 1") +
+  ylab("Coordinate 2") +
+  theme(strip.text.y = element_text(size = 7.5), axis.text.x = element_text(angle = 90))
+rm(designs)
+```
+
+```{r univMoransDesign, fig.cap = "Boxplots of univariate Moran's I values of the \\textit{x}-variable (y-axis) from the designs in \\fref{fig:designs} (x-axis), over 50 Monte-Carlo instances.\\label{fig:univMoransIdesign}", fig.height = 4, fig.width = 7.6}
+wm <- sbivar:::buildWeightMat(xMat, xMat, wo = "Gauss", eta = 1e-3)
+diag(wm) <- 0
+uniMorans <- lapply(spatPatsShow, function(w) {
+  dat <- makeXY(xMat, yMat,
+    what = w, nSims = 5e1,
+    nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+  )
+  x <- scale(dat$x)
+  diag(crossprod(x, wm) %*% x)
+})
+names(uniMorans) <- factor(names(uniMorans), ordered = TRUE, labels = c("No spatial\npattern", "Independent\nGPs", "Dependent\nGPs", "Streak", "Zones", "Streak + GPs", "Zones + GPs"), levels = spatPatsShow)
+boxplot(uniMorans, ylab = "Univariate Moran's I", xlas = .5, cex.axis = .65)
+abline(h = 0, lty = "dotted")
+rm(wm, uniMorans)
+```
+
+```{r coordPrep}
+# Use the landmarks in S1_data, and continue the magpie pipeline from there to recover this alignment
+if (!file.exists(magFile <- "Results/magpieCoords.RData")) {
+  MagpieStxFiles <- list.files(vmcf <- "S1_data/VicariMagpieCoords/", pattern = "stx")
+  sampleNamesMouse <- selfName(gsub("_stx.csv", "", MagpieStxFiles))
+  magpieCoords <- lapply(sampleNamesMouse, function(sn) {
+    msiCoords <- read.csv(paste0(vmcf, sn, "_msi.csv"), row.names = 1, header = FALSE)[, 1:3]
+    colnames(msiCoords) <- c("in_tissue", "x", "y")
+    msiCoords <- msiCoords[msiCoords$in_tissue == 1, ]
+    visiumCoords <- read.csv(paste0(vmcf, sn, "_stx.csv"), header = FALSE, col.names = c("barcode", "in_tissue", "array_row", "array_col", "x", "y"))
+    visiumCoords <- visiumCoords[visiumCoords$in_tissue == 1, ]
+    rownames(visiumCoords) <- visiumCoords$barcode
+    list(
+      "Stx" = as.matrix(visiumCoords[rownames(exprObjs[[sn]]), c("x", "y")]),
+      "Msi" = as.matrix(msiCoords[, c("x", "y")])
+    )
+  })
+  # Msi coordinates have been transformed
+  # Turn them flat, and shift to origin for plotting
+  magpieCoords <- lapply(magpieCoords, function(x) {
+    x <- rotate_clouds(x)
+    Mins <- apply(vapply(x, FUN.VALUE = double(2), FUN = function(y) {
+      apply(y, 2, min)
+    }), 1, min)
+    lapply(x, function(y) {
+      y[, "x"] <- (y[, "x"] - Mins[1])
+      y[, "y"] <- (y[, "y"] - Mins[2])
+      y
+    })
+  })
+  save(magpieCoords, file = magFile)
+} else {
+  load(magFile)
+}
+```
+
+```{r mainPaperReadIn}
+# Metabolomics
+if (!file.exists(msiVicariFile <- "Data/msiVicari.RData")) {
+  # Download msi libraries
+  downloadAndUnzip("https://data.mendeley.com/public-files/datasets/w7nw4km7xd/files/1ed125c4-e082-429b-bdfd-e59a2aa856b1/file_downloaded", destfile = MsiFold <- "Data/Vicari2024/Msi", method = "wget")
+  msiFiles <- list.files(MsiFold, pattern = "smamsi.csv", recursive = TRUE, full.names = TRUE)
+  msiObjs0 <- lapply(msiFiles, function(x) as.matrix(read.csv(x)))
+  # Correct naming mistake, confirmed by M. Vicari
+  names(msiObjs0) <- gsub("V11T17-085", "V11T16-085", sapply(gsub("_smamsi.csv", "", msiFiles), function(x) {
+    tmp <- gregexpr("/", x)[[1]]
+    substr(x, tmp[length(tmp)] + 1, tmp[length(tmp)] + 13)
+  }))
+  msiObjs <- lapply(msiObjs0, function(x) {
+    as.matrix(x[, !(colnames(x) %in% c("x", "y"))])
+  })
+  locObjsMsi <- lapply(msiObjs0, function(x) {
+    as.matrix(x[, c("x", "y")])
+  })
+  # Remove empty samples
+  idMSI <- lapply(msiObjs, function(x) {
+    which(rowSums(x[, -c(1, 2)]) > 0)
+  })
+  msiObjs <- mapply(msiObjs, idMSI, FUN = function(x, id) {
+    x[id, ]
+  }, SIMPLIFY = FALSE)
+  locObjsMsi <- mapply(locObjsMsi, idMSI, FUN = function(x, id) {
+    x[id, ]
+  }, SIMPLIFY = FALSE)
+  for (i in sampleNamesMouse) { # Take pixel names from the alignment
+    rownames(msiObjs[[i]]) <- rownames(locObjsMsi[[i]]) <- rownames(magpieCoords[[i]]$Msi)
+  }
+  # Download supplementary data
+  download.file("https://static-content.springer.com/esm/art%3A10.1038%2Fs41587-023-01937-y/MediaObjects/41587_2023_1937_MOESM2_ESM.xlsx", destfile = supFileVic <- "Data/Vicari2024/41587_2023_1937_MOESM2_ESM.xlsx", method = "curl", extra = "-L -O")
+  metaboliteInfo <- read.xlsx(supFileVic, sheet = 3, startRow = 3, rows = c(3:18, 25, 26))
+  unMets <- unique(unlist(lapply(msiObjs, colnames)))
+  names(unMets) <- unMets
+  unMetsIdentified <- sapply(as.numeric(metaboliteInfo$`m/z`), function(x) {
+    unMets[which.min(abs(as.numeric(gsub("X", "", unMets)) - x))]
+  })
+  unMetsIdentified <- unMetsIdentified[idMet <- sapply(as.numeric(metaboliteInfo$`m/z`), function(x) {
+    min(abs(as.numeric(gsub("X", "", unMets)) - x))
+  }) < 0.1] # remove bad matches
+  names(unMetsIdentified) <- make.names(metaboliteInfo$Name)[idMet]
+  unMetsIdentified <- unMetsIdentified[order(as.numeric(gsub("X", "", unMetsIdentified)))]
+  names(unMetsIdentified) <- gsub("\\.+", ".", sub("\\.$", "", names(unMetsIdentified)))
+  names(unMetsIdentified)[names(unMetsIdentified) == "Dopamine.double.derivatized"] <- "Dopamine"
+  names(unMetsIdentified)[names(unMetsIdentified) == "X3.4.Dihydroxyphenylacetic.acid.DOPAC.double.derivatized"] <- "X3.4.Dihydroxyphenylacetic.acid.DOPAC"
+  save(msiObjs, locObjsMsi, unMetsIdentified, file = msiVicariFile)
+} else {
+  load(msiVicariFile)
+}
+# Spatial Tx
+if (!file.exists(stxVicariFile <- "Data/stxVicari.RData")) {
+  # Figshare article ID (from the URL)
+  article_id <- 22778920
+  base_url <- paste0("https://api.figshare.com/v2/articles/", article_id, "/files")
+  StxFolder <- "Data/Vicari2024/Stx"
+  page <- 1
+  all_files <- list()
+  repeat {
+    url <- paste0(base_url, "?page=", page, "&page_size=", 100)
+    res <- GET(url)
+    files <- fromJSON(content(res, "text", encoding = "UTF-8"))
+    if (length(files) == 0) break
+    all_files[[page]] <- files
+    page <- page + 1
+  }
+  files_df <- base::do.call(rbind, all_files)
+  # Download location files
+  # Filter tissue_positions_list.csv
+  target_files <- files_df[grep("tissue_positions_list\\.csv$", files_df$name), ]
+  for (i in seq_len(nrow(target_files))) {
+    file_url <- target_files$download_url[i]
+    file_name <- target_files$name[i]
+    GET(file_url, write_disk(file.path(StxFolder, file_name), overwrite = TRUE))
+  }
+  stxFiles <- list.files(StxFolder, pattern = "tissue_positions_list.csv", recursive = TRUE, full.names = TRUE)
+  locObjsStx <- lapply(stxFiles, read.csv, header = FALSE, row.names = 1)
+  # Locations
+  locObjsStx <- lapply(locObjsStx, function(x) {
+    colnames(x) <- c("underTissue", "x", "y", "un1", "un2")
+    as.matrix(x[x[, "underTissue"] == 1, c("x", "y")]) # Subset for spots under tissue
+  })
+  names(locObjsStx) <- sapply(sub("RNA_", "", stxFiles), function(x) {
+    tmp <- gregexpr("_tissue_positions_list.csv", x)[[1]]
+    substr(x, 21, tmp[1] - 1)
+  })
+  # Download expression libraries
+  exprFiles <- files_df[grep("RNA_filtered_feature_bc_matrix\\.h5$", files_df$name), ]
+  for (i in seq_len(nrow(exprFiles))) {
+    file_url <- exprFiles$download_url[i]
+    file_name <- exprFiles$name[i]
+    GET(file_url, write_disk(file.path(StxFolder, file_name), overwrite = TRUE))
+  }
+  exprFiles <- list.files(StxFolder, pattern = "filtered_feature_bc_matrix.h5", recursive = TRUE, full.names = TRUE)
+  exprObjs <- lapply(exprFiles, h5read, name = "matrix")
+  names(exprObjs) <- sapply(exprFiles, function(x) {
+    tmp <- gregexpr("_RNA_filtered_feature_bc_matrix.h5", x)[[1]]
+    substr(x, 21, tmp[1] - 1)
+  })
+  minLib <- 1e3
+  exprObjs <- lapply(exprObjs, function(y) {
+    x <- t(Matrix::sparseMatrix(
+      i = y[["indices"]], p = y[["indptr"]], x = y[["data"]],
+      dims = y[["shape"]], index1 = FALSE, dimnames = list(y$features$name, y$barcodes)
+    ))
+    # Based on dior::h5_to_matrix, with updated name slots
+    colnames(x) <- make.names(colnames(x)) # Enforce valid names
+    tmp <- x[rowSums(x) >= minLib, colSums(x) > 0]
+    tmp[, -which(duplicated(colnames(tmp)))]
+  })
+  for (i in names(exprObjs)) {
+    locObjsStx[[i]] <- locObjsStx[[i]][rownames(exprObjs[[i]]), ]
+  }
+  # Metadata
+  download.file("https://data.mendeley.com/public-files/datasets/w7nw4km7xd/files/abed16be-70ce-4991-a0df-85b475d7aa44/file_downloaded", destfile = "Data/Vicari2024/metadata.csv")
+  metaVicari0 <- read.csv("Data/Vicari2024/metadata.csv")
+  metaVicari <- metaVicari0[metaVicari0$Sample.ID %in% names(exprObjs), c("Data.Type", "Sample.ID", "Matrix", "sample", "Condition", "Brain.area", "Visium.Protocol")]
+  save(exprObjs, metaVicari, locObjsStx, file = stxVicariFile)
+} else {
+  load(stxVicariFile)
+}
+sampleNames <- selfName(intersect(names(msiObjs), names(exprObjs)))
+sampleNamesMouse <- grep(value = TRUE, "V11T17-102", invert = TRUE, sampleNames)
+indivMouse <- sapply(sampleNamesMouse, substr, 1, 10)
+rm(locObjsMsi, locObjsStx)
+```
+
+```{r jitterLandMarks}
+# To be found in S1_data
+landmarksDf <- read.csv("S1_data/landmarks.csv", row.names = 1)
+# Landmarks are given here, the rest of the MAGPIE pipeline is available from https://core-bioinformatics.github.io/magpie/tutorial/SMA_tutorial.html, using the no_HE option and 'affine transformation'
+nSimsJitter <- 10 # 20
+sdJitter <- c(0, 0.5, 1, 1.5, 2, 3)
+landmarksGrid <- expand.grid("rep" = seq_len(nSimsJitter), "sdJitter" = sdJitter, "sample" = sampleNamesMouse, stringsAsFactors = FALSE)
+lmFolder <- "Results/landmarks/"
+distorted <- lapply(seq_len(nrow(landmarksGrid)), function(i) {
+  sam <- landmarksGrid[i, "sample"]
+  rep <- landmarksGrid[i, "rep"]
+  sd <- landmarksGrid[i, "sdJitter"]
+  lm <- landmarksDf[landmarksDf$sample == sam, c("X_left", "Y_left", "X_left", "X_right")]
+  if (!file.exists(File <- paste0(lmFolder, "rep", rep, "sd", sd, "sample", sam, ".csv"))) {
+    lm$X_left <- lm$X_left + rnorm(length(lm$X_left), sd = sd)
+    lm$Y_left <- lm$Y_left + rnorm(length(lm$Y_left), sd = sd)
+    write.csv(lm, file = File, row.names = FALSE)
+  } # Jitter landmarks and store for alignment with magpie
+})
+rm(distorted, landmarksDf, landmarksGrid)
+foo <- gc()
+```
+
+```{r plotExploreJitter, fig.cap = "Real alignments (top plots) and examples of alignment after jittering landmarks with different standard deviations (SD) (other plots) of the first section of the three mice in the Vicari data (plot titles). Metabolic spots are black and transcriptomic spots are blue.\\label{fig:alignJitter}", fig.height = 9.5}
+par(mfcol = c(4, 3), mar = c(4, 4, 3, .6))
+foo <- lapply(sampleNamesMouse[c(1, 4, 7)], function(sam) {
+  visiumCoords <- read.csv(header = FALSE, paste0("Data/Vicari2024/Vicari2024_Magpie/input/", sam, "/visium/spatial/tissue_positions_list.csv"), col.names = c("barcode", "in_tissue", "array_row", "array_col", "x", "y"))
+  visiumCoords <- visiumCoords[visiumCoords$in_tissue == 1, ]
+  msiCoords <- read.csv(paste0(
+    "Data/Vicari2024/Vicari2024_Magpie/", sam,
+    "/spaceranger/spatial/tissue_positions_list.csv"
+  ), row.names = 1, header = FALSE)[, 1:3]
+  colnames(msiCoords) <- c("in_tissue", "x", "y")
+  msiCoords <- msiCoords[msiCoords$in_tissue == 1, ]
+  rc <- rotate_clouds(list(visiumCoords[, c("x", "y")], msiCoords[, c("x", "y")]))
+  plotxy(rc$Msi, rc$Stx, main = paste0("Real alignment\n", sam), cex = 0.1, cex.main = .85)
+  lapply(sdJitter[c(3, 5, 6)], function(sd) {
+    dat <- read.csv(paste0(lmFolder, "newCoords_rep1sd", sd, "sample", sam, ".csv"), header = FALSE)[, c(3, 4)]
+    rc <- rotate_clouds(list(visiumCoords[, c("x", "y")], dat))
+    plotxy(rc$Msi, rc$Stx, main = paste0("Jittter SD=", sd, "\n", sam), cex = 0.1, cex.main = .85)
+  })
+})
+par(mfrow = c(1, 1))
+rm(foo)
+```
+
+\clearpage
+
+## Results
+
+### Nonparametric simulations
+
+#### Single-image analysis
+
+\fref{fig:nonParAll} in the main text summarizes the results of the nonparametric simulations on single images, here we show more exhaustive results. Figs \ref{fig:qqGodfrey}-\ref{fig:qqVicari} demonstrate that bivariate Moran's I with random shift or randomisation null distribution, and GAMs when both modalities are permuted, often have p-value distributions that are larger than uniform, whereas many existing methods have smaller-than-uniform p-value distributions. Next we investigate which features are prone to incur false findings. As measure of SAC, we calculate univariate Moran's I values $\mb X^t \mb W \mb X$ for all features of the original data, constructing the weight matrix as for the bivariate case, with Gaussian weights and decay parameter $\eta = 10^{-3}$, and setting the diagonal to zero. Boxplots of the univariate Moran's I values thus calculated are shown in Figs \ref{fig:boxplotMoransIgodfrey}-\ref{fig:boxplotMoransIvicari}, showing considerable SAC in almost all images, with the metabolome exhibiting the strongest SAC. We model the probability that a feature is detected as significantly associated with a permuted feature from the other modality through generalized linear mixed models using the *glmer* function in the *lme4* package \parencite{Bates2015} with a binomial outcome distribution. Fixed effects were the dataset, the non-permuted modality, the interaction of the previous two and univariate Moran's I of the non-permuted feature; random intercepts were included for the sections. Separate models were fitted per method. Modeled probabilities of detection based in the fixed effects are plotted in \fref{fig:moransIuniFindings}, revealing that for the methods found liberal in the simulations, features with high SAC in the non-permuted modality are more likely to incur false findings.
+
+```{r loadGodfrey}
+if (!file.exists(godfreyFile <- "Data/godfrey2025.RData")) {
+  # Metadata on files
+  meta_url <- paste0("https://dataverse.harvard.edu/api/datasets/:persistentId/?persistentId=doi:10.7910/DVN/GZFCWC")
+  meta <- fromJSON(content(GET(meta_url), as = "text", encoding = "UTF-8"))
+  files <- meta$data$latestVersion$files
+  # Extract file names and file IDs
+  file_df <- data.frame(
+    name = files$dataFile$filename,
+    id = files$dataFile$id,
+    stringsAsFactors = FALSE
+  )
+  # Select and download h5ad-files
+  targets <- file_df[grepl("\\.h5ad$", file_df$name), ]
+  for (i in seq_len(nrow(targets))) {
+    file_id <- targets$id[i]
+    fname <- paste0("Data/Godfrey2025/", targets$name[i])
+    url <- paste0("https://dataverse.harvard.edu/api/access/datafile/", file_id)
+    download.file(url, destfile = fname, method = "curl", extra = "-L -O")
+  }
+  # Read in h5ad files
+  godfreyFiles <- list.files("Data/Godfrey2025", full.names = TRUE, pattern = "\\.h5ad$")
+  godfrey <- lapply(godfreyFiles, function(f) {
+    x <- read_h5ad(f)
+    Stx <- as.matrix(x$layers[["raw"]])
+    colnames(Stx) <- make.names(colnames(Stx))
+    Coords <- as.matrix(x$obsm[["spatial"]])
+    colnames(Coords) <- c("x", "y")
+    Coords[, "y"] <- max(Coords[, "y"]) - Coords[, "y"] # Make orientation match paper
+    Met <- as.matrix(x$uns[["msi"]])
+    Annot <- x$obs$annotation # Pathologists' annotation
+    colnames(Met) <- make.names(x$uns[["mz_features"]])
+    rownames(Met) <- rownames(Coords) <- rownames(Stx)
+    list(Coord = Coords, Stx = Stx, Msi = Met, Annot = Annot)
+  })
+  names(godfrey) <- gsub(".h5ad", "", list.files("Data/Godfrey2025", pattern = "\\.h5ad$"))
+  # Download supplementary material xlsx-file
+  download.file("http://onlinelibrary.wiley.com/action/downloadSupplement?doi=10.1002%2Fanie.202502028&file=anie202502028-sup-0002-TABLES.xlsx", destfile = "Data/Godfrey2025/anie202502028-sup-0002-tables.xlsx", method = "curl", extra = "-L -O")
+  save(godfrey, file = godfreyFile)
+}
+numFeatsGodfrey <- 3e1
+if (!file.exists(godfreyIdFile <- "Data/godfrey2025identified.RData")) {
+  load(godfreyFile)
+  # Read in xlsx, first sheet on MIS annotations
+  godfreyMetTable1 <- read.xlsx("Data/Godfrey2025/anie202502028-sup-0002-tables.xlsx", sheet = 1)
+  allMets <- make.names(unique(godfreyMetTable1$`Observed.m/z`))
+  godfreyIdentified <- lapply(godfrey, function(x) {
+    x$Msi <- x$Msi[, sapply(allMets, grep, colnames(x$Msi))]
+    x$Stx <- x$Stx[, colSums(x$Stx) > 0]
+    x
+  }) # Subset to identified m/z
+  save(godfreyIdentified, allMets, file = godfreyIdFile)
+} else {
+  load(godfreyIdFile)
+}
+samplesGodfrey <- selfName(names(godfreyIdentified))
+godfreyMetTable <- read.xlsx("Data/Godfrey2025/anie202502028-sup-0002-tables.xlsx", sheet = 2)[
+  ,
+  c("Sample", "Metabolite/Lipid", "Observed.MZ", "Genes")
+]
+# Read xlsx on individual correlations
+mappingSamples <- samplesGodfrey
+names(mappingSamples) <- c("BC-1.2", "BC-1", "BC-2", "BC-3", "LC-1", "LC-2", "LC-3")
+godfreyMetTable$MZmatched <- sapply(paste0("X", godfreyMetTable$Observed.MZ),
+  grep,
+  x = allMets, value = TRUE
+) # Match m/z's
+allMetsCommon <- godfreyMetTable$`Metabolite/Lipid`[match(allMets, godfreyMetTable$MZmatched)]
+names(allMetsCommon) <- allMets
+nScramsGodfrey <- 2e1
+godfreyGrid <- expand.grid(
+  stringsAsFactors = FALSE, "what" = c("Stx", "Met", "Stx_Met"),
+  "sample" = samplesGodfrey, "rep" = seq_len(nScramsGodfrey)
+)
+```
+
+```{r saveVicariSbivar, eval = FALSE}
+# Save Vicari data for in sbivar package
+numSbivar <- 5
+sampleNamesMouseSbivar <- sampleNamesMouse[-(1:3)]
+selGenesVicariSbivar <- selfName(filterFeatsList(lapply(exprObjs[sampleNamesMouseSbivar], as.matrix), numFeats = numSbivar, allPresent = FALSE))
+selGenesVicariSbivar <- c("Fth1", "mt.Atp6", "Sparc", "Gnas", "Pcp4")
+selMetsVicariSbivar <- unMetsIdentified[match(c("Dopamine", "Tocopherol", "Taurine", "Histidine", "GABA"), names(unMetsIdentified))]
+TranscriptCoords <- lapply(magpieCoords[sampleNamesMouseSbivar], function(x) x$Stx)
+MetaboliteCoords <- lapply(magpieCoords[sampleNamesMouseSbivar], function(x) x$Msi)
+TranscriptOutcomes <- lapply(exprObjs[sampleNamesMouseSbivar], function(x) as.matrix(x[, selGenesVicariSbivar]))
+MetaboliteOutcomes <- lapply(msiObjs[sampleNamesMouseSbivar], function(x) {
+  mat <- x[, intersect(colnames(x), selMetsVicariSbivar)]
+  colnames(mat) <- names(unMetsIdentified)[match(colnames(mat), unMetsIdentified)]
+  mat
+})
+Vicari <- list(
+  "TranscriptCoords" = TranscriptCoords, "TranscriptOutcomes" = TranscriptOutcomes,
+  "MetaboliteCoords" = MetaboliteCoords, "MetaboliteOutcomes" = MetaboliteOutcomes
+)
+save(Vicari, file = "sbivar/data/Vicari.RData")
+# tools::resaveRdaFiles("data") #To be run in package
+```
+
+```{r godfreysim}
+etaSim <- 2e-4
+if (!file.exists(godfreyScrambleFile <- "Results/godfreyScramble.RData")) {
+  load(godfreyFile)
+  godfreyFiltered <- lapply(godfrey, function(x) {
+    x$Stx <- filterFeats(x$Stx, numFeats = numFeatsGodfrey)
+    x$Msi <- filterFeats(x$Msi, numFeats = numFeatsGodfrey)
+    x
+  })
+  godfreyScramble <- lapply(seq_len(nrow(godfreyGrid)), function(ii) {
+    what <- godfreyGrid[ii, "what"]
+    sample <- godfreyGrid[ii, "sample"]
+    rep <- godfreyGrid[ii, "rep"]
+    dat <- godfreyFiltered[[sample]]
+    if (grepl("Stx", what)) {
+      dat$Stx <- dat$Stx[sample(nrow(dat$Stx)), ]
+    }
+    if (grepl("Met", what)) {
+      dat$Msi <- dat$Msi[sample(nrow(dat$Msi)), ]
+    }
+    featsGrid <- expand.grid(stringsAsFactors = FALSE, gene = colnames(dat$Stx), met = colnames(dat$Msi))
+    distMat <- as.matrix(stats::dist(dat$Coord))
+    rownames(dat$Stx) <- rownames(dat$Msi) <- rownames(dat$Coord)
+    X <- normMat(dat$Stx, "rel")
+    Y <- normMat(dat$Msi, "rel")
+    samNames <- intersect(rownames(X), rownames(Y))
+    dat$Coord <- dat$Coord[samNames, ]
+    X <- X[samNames, ]
+    Y <- Y[samNames, ]
+    dat$Coord <- sbivar:::moveCoords(dat$Coord)
+    dat$Coord <- dat$Coord / max(dat$Coord)
+    wm <- sbivar:::buildWeightMat(dat$Coord, dat$Coord, wo = "Gauss", eta = etaSim)
+    wm[wm < 1e-30] <- 0
+    listWgeary <- listw2U(mat2listw(wm, style = "W"))
+    dgr <- as.matrix(spatialreg::as_dgRMatrix_listw(listWgeary))
+    wc <- spweights.constants(listWgeary, zero.policy = FALSE, adjust.n = TRUE)
+    listW <- mat2listw(wm, style = "M")
+    prepCzaplewski <- prepareCzaplewskiWeights(wm)
+    H <- diag(n) - 1 / n
+    # Moran's I
+    Ixy <- crossprod(X, wm) %*% Y
+    ## SpatialDM
+    StxScaled <- scale(X, center = TRUE, scale = FALSE)
+    MetScaled <- scale(Y, center = TRUE, scale = FALSE)
+    IxyScaled <- crossprod(StxScaled, wm) %*% MetScaled
+    nswm <- n / sum(wm)
+    IxyvarSpatialDM <- (n / (n - 1))^2 * 1 / sum(wm)^2 * tr((H %*% wm %*% H)^2)
+    ## Czaplewski
+    pValsLoop <- vapply(seq_len(nrow(featsGrid)), FUN.VALUE = double(9), function(i) {
+      x <- X[, featsGrid[i, "gene"]]
+      y <- Y[, featsGrid[i, "met"]]
+      resCza <- getVarCzaplewski(x, y, prepCzaplewski)
+      Ixynorm <- nswm * IxyScaled[featsGrid[i, "gene"], featsGrid[i, "met"]] /
+        sqrt(sum(MetScaled[, featsGrid[i, "met"]]^2) * sum(StxScaled[, featsGrid[i, "gene"]]^2))
+      out <- c(
+        "MoransI_Czaplewski" = makePval((Ixy[featsGrid[i, "gene"], featsGrid[i, "met"]]
+        - resCza["EIxy"]) / sqrt(resCza["varIxy"])),
+        "MoransI_SpatialDM" = makePval(Ixynorm / sqrt(IxyvarSpatialDM)),
+        "SpaGene" = SpaGene_LR(
+          expr = rbind("x" = dat$Stx[, featsGrid[i, "gene"]], "y" = dat$Msi[, featsGrid[i, "met"]]), perm = nPerms,
+          location = dat$Coord, LRpair = data.frame("x" = "x", "y" = "y")
+        )[["pval"]],
+        # This SpaGene test on raw data, normalisation happens inside function
+        "LeesL_asymptotic" = lee.test(X[, featsGrid[i, "gene"]], Y[, featsGrid[i, "met"]], listW)$p.value,
+        "LeesL_permutation" = lee.mc(X[, featsGrid[i, "gene"]], Y[, featsGrid[i, "met"]], listW, nsim = nPerms)$p.value,
+        "GearysC_asymptotic" = gearybi.test(X[, featsGrid[i, "gene"]], Y[, featsGrid[i, "met"]],
+          listWgeary,
+          randomisation = FALSE
+        )$p.value,
+        "GearysC_randomisation" = gearybi.test(X[, featsGrid[i, "gene"]], Y[, featsGrid[i, "met"]],
+          listWgeary,
+          randomisation = TRUE
+        )$p.value,
+        "PearsonCor" = cor.test(X[, featsGrid[i, "gene"]], Y[, featsGrid[i, "met"]])$p.value,
+        "modTtest" = modified.ttest(X[, featsGrid[i, "gene"]], Y[, featsGrid[i, "met"]], dat$Coord)$p.value
+      )
+      return(out)
+    })
+    scramInst <- cbind(t(pValsLoop), "MoransI_permutation" = c(IxyPermPvals))
+    sample <- godfreyGrid[ii, "sample"]
+    rownames(scramInst) <- sbivar:::makeNames(colnames(godfreyFiltered[[sample]]$Stx), colnames(godfreyFiltered[[sample]]$Msi))
+    scramInst
+  })
+  save(godfreyScramble, file = godfreyScrambleFile)
+} else {
+  load(godfreyScrambleFile)
+}
+```
+
+```{r gamsScrambleGodfrey}
+if (!file.exists(realFitScrambleGodfreyFile <- "Results/realFitsScrambleGodfrey.RData")) {
+  load(godfreyFile)
+  godfreyFiltered <- lapply(godfrey, function(x) {
+    x$Stx <- filterFeats(x$Stx, numFeats = numFeatsGodfrey)
+    x$Msi <- filterFeats(x$Msi, numFeats = numFeatsGodfrey)
+    x
+  })
+  realFitsScrambleGodfrey <- mclapply(seq_len(nrow(godfreyGrid)), mc.cores = nCores, function(ii) {
+    what <- godfreyGrid[ii, "what"]
+    sn <- godfreyGrid[ii, "sample"]
+    rep <- godfreyGrid[ii, "rep"]
+    dat <- godfreyFiltered[[sn]]
+    if (grepl("Stx", what)) {
+      dat$Stx <- dat$Stx[sample(nrow(dat$Stx)), ]
+    }
+    if (grepl("Met", what)) {
+      dat$Msi <- dat$Msi[sample(nrow(dat$Msi)), ]
+    }
+    rownames(dat$Stx) <- rownames(dat$Msi) <- rownames(dat$Coord)
+    Moranres <- sbivar(dat$Stx, dat$Msi, dat$Coord,
+      method = "Moran", normX = "rel",
+      normY = "rel", verbose = FALSE
+    )$result
+    GAMres <- sbivar(dat$Stx, dat$Msi, dat$Coord,
+      method = "GAM",
+      families = FamiliesGodfrey, verbose = FALSE
+    )$result
+    ModTres <- sbivar(dat$Stx, dat$Msi, dat$Coord,
+      method = "Modified",
+      normX = "rel", normY = "rel", verbose = FALSE
+    )$result
+    MoranResPerm <- MoransIpermutation(dat$Stx, dat$Msi, dat$Coord, dat$Coord,
+      nPerms = nPerms,
+      normX = "rel", normY = "rel"
+    )
+    CorRes <- corTests(dat$Stx, dat$Msi, normX = "rel", normY = "rel")[, "pVal"]
+    CCresMoran <- CCtestEtas(dat$Stx, dat$Msi, dat$Coord, dat$Coord, nPerms, normX = "rel", normY = "rel")
+    list(
+      "MoransI_sbivar" = Moranres, "GAM" = GAMres, "modTtest" = ModTres,
+      "PearsonCor" = CorRes, "MoransI_permutation" = MoranResPerm,
+      "MoransI_RandomShift" = CCresMoran
+    )
+  })
+  save(realFitsScrambleGodfrey, file = realFitScrambleGodfreyFile)
+}
+if (!file.exists(realFitScrambleGodfreyFilePrep <- "Results/realFitsScrambleGodfreyPrep.RData")) {
+  load(realFitScrambleGodfreyFile)
+  realFitsScrambleGodfreyPrep <- lapply(realFitsScrambleGodfrey, function(x) {
+    x[c("MoransI_sbivar", "GAM")] <- lapply(x[c("MoransI_sbivar", "GAM")], function(xx) {
+      xx[, "pVal"]
+    })
+    x[c("MoransI_permutation", "MoransI_RandomShift")] <- lapply(x[c("MoransI_permutation", "MoransI_RandomShift")], function(yy) {
+      out <- c(yy)
+      names(out) <- sbivar:::makeNames(rownames(yy), colnames(yy))
+      out
+    })
+    lapply(x[c("MoransI_sbivar", "GAM", "MoransI_permutation", "MoransI_RandomShift")], function(yy) {
+      data.frame("value" = yy, "featurePair" = names(yy))
+    })
+  })
+  save(realFitsScrambleGodfreyPrep, file = realFitScrambleGodfreyFilePrep)
+} else {
+  load(realFitScrambleGodfreyFilePrep)
+}
+```
+
+```{r univariateMoransIGodfrey}
+if (!file.exists(realMoranGodfreyUniFile <- "Results/realMoranUniGodfrey.RData")) {
+  realFitsMoranUniGodfrey <- lapply(samplesGodfrey, function(sn) {
+    x <- scale(normMat(godfreyFiltered[[sn]]$Stx, "rel"))
+    y <- scale(normMat(godfreyFiltered[[sn]]$Msi, "rel"))
+    Coord <- sbivar:::moveCoords(godfreyFiltered[[sn]]$Coord)
+    Coord <- Coord / max(Coord)
+    wm <- sbivar:::buildWeightMat(Coord, Coord, wo = "Gauss", eta = 1e-3)
+    diag(wm) <- 0
+    dimnames(wm) <- list(rownames(Coord), rownames(Coord))
+    IxyStx <- crossprod(x, wm[rownames(x), rownames(x)]) %*% x
+    IxyMsi <- crossprod(y, wm) %*% y
+    list("IxyStx" = IxyStx, "IxyMsi" = IxyMsi, "maxI" = svd(wm, nu = 0, nv = 0)$d[1] * (nrow(wm) - 1) * (ncol(wm) - 1))
+  })
+  save(realFitsMoranUniGodfrey, file = realMoranGodfreyUniFile)
+} else {
+  load(realMoranGodfreyUniFile)
+}
+```
+
+```{r univariateMoransI}
+if (!file.exists(realMoranUniFile <- "Results/realMoranUniVicari.RData")) {
+  VicariFilteredScramble <- lapply(sampleNamesMouse, function(x) {
+    Stx <- as.matrix(filterFeats(exprObjs[[x]], numFeats = numFeatsVicariScramble))
+    Msi <- filterFeats(msiObjs[[x]], numFeats = numFeatsVicariScramble)
+    rownames(Msi) <- rownames(magpieCoords[[x]]$Msi)
+    list("Stx" = Stx, "Msi" = Msi)
+  })
+  realFitsMoranUniVicari <- lapply(sampleNamesMouse, function(sn) {
+    x <- scale(normMat(VicariFilteredScramble[[sn]]$Stx, "rel"))
+    y <- scale(normMat(VicariFilteredScramble[[sn]]$Msi, "rel"))
+    Coords <- sbivar:::moveTwoCoords(magpieCoords[[sn]]$Stx, magpieCoords[[sn]]$Msi)
+    wmStx <- sbivar:::buildWeightMat(Coords$Cx, Coords$Cx, wo = "Gauss", eta = 1e-3)
+    dimnames(wmStx) <- list(rownames(Coords$Cx), rownames(Coords$Cx))
+    IxyStx <- crossprod(x, wmStx[rownames(x), rownames(x)]) %*% x
+    wmMsi <- sbivar:::buildWeightMat(Coords$Ey, Coords$Ey, wo = "Gauss", eta = 1e-3)
+    dimnames(wmMsi) <- list(rownames(Coords$Ey), rownames(Coords$Ey))
+    IxyMsi <- crossprod(y, wmMsi) %*% y
+    list(
+      "IxyStx" = IxyStx, "IxyMsi" = IxyMsi,
+      "maxIStx" = svd(wmStx, nu = 0, nv = 0)$d[1] * (nrow(wmStx) - 1) * (ncol(wmStx) - 1),
+      "maxIMsi" = svd(wmMsi, nu = 0, nv = 0)$d[1] * (nrow(wmMsi) - 1) * (ncol(wmMsi) - 1)
+    )
+  })
+  save(realFitsMoranUniVicari, file = realMoranUniFile)
+} else {
+  load(realMoranUniFile)
+}
+```
+
+```{r processScrambleGodfrey, fig.cap = "Type I error (y-axis) for different methods (colour) when permuting observations of one or two modalities (rows) of the sections of the Godfrey data (colums). The dotted horizontal line indicates the significance level of 0.05.\\label{fig:nonParResGodfrey}"}
+moltRealGodfrey <- melt(realFitsScrambleGodfreyPrep, id.vars = "featurePair")
+colnames(moltRealGodfrey)[4:5] <- c("Method", "rep")
+moltRealGodfrey <- cbind(moltRealGodfrey, godfreyGrid[moltRealGodfrey[, "rep"], ])
+moltRealGodfrey$what <- factor(moltRealGodfrey$what,
+  levels = scrambleVec,
+  labels = scrambleLabels, ordered = TRUE
+)
+moltRealGodfrey$Method <- factor(moltRealGodfrey$Method,
+  levels = methLevels,
+  labels = methLabels, ordered = TRUE
+)
+moltRealGodfreyAgg <- aggregate(data = moltRealGodfrey, x = value ~ Method + sample + what, FUN = getPower)
+moltRealGodfreyAgg$Dataset <- "Godfrey"
+realFitsScrambleGodfreyPrepAdj <- sapply(realFitsScrambleGodfreyPrep, function(x) {
+  sapply(x, function(yy) {
+    any(p.adjust(yy$value, "BH") < sigLevel)
+  })
+})
+scrambleGodfreyFdr <- apply(realFitsScrambleGodfreyPrepAdj, 1, function(x) tapply(x, godfreyGrid$what, mean))
+godfreyScrambleExistPrep <- lapply(godfreyScramble, function(x) {
+  lapply(selfName(colnames(x)), function(y) {
+    data.frame("value" = x[, y], "featurePair" = rownames(x))
+  })
+})
+realFitsScrambleGodfreyPrepBoth <- mapply(realFitsScrambleGodfreyPrep, godfreyScrambleExistPrep,
+  FUN = function(x, y) {
+    c(x, y)
+  }, SIMPLIFY = FALSE
+)
+moltRealGodfreyExist <- melt(godfreyScramble)
+colnames(moltRealGodfreyExist) <- c("featurePair", "Method", "value", "rep")
+moltRealGodfreyExist <- cbind(moltRealGodfreyExist, godfreyGrid[moltRealGodfreyExist[, "rep"], ])
+moltRealGodfreyExist$what <- factor(moltRealGodfreyExist$what,
+  levels = scrambleVec,
+  labels = scrambleLabels, ordered = TRUE
+)
+moltRealGodfreyExist$Method <- factor(moltRealGodfreyExist$Method,
+  levels = methLevels,
+  labels = methLabels, ordered = TRUE
+)
+moltRealGodfreyExistAgg <- aggregate(
+  data = moltRealGodfreyExist,
+  x = value ~ Method + sample + what, FUN = getPower
+)
+moltRealGodfreyExistAgg$Dataset <- "Godfrey"
+moltRealGodfreyExistAggAll <- rbind(moltRealGodfreyAgg, moltRealGodfreyExistAgg)
+moransIincurringGodfrey <- base::do.call(rbind, lapply(scrambleVec[1:2], function(what) {
+  morName <- switch(what,
+    "Stx" = "IxyMsi",
+    "Met" = "IxyStx"
+  ) # Take non-permuted modality
+  tmp <- base::do.call(rbind, lapply(id <- which(godfreyGrid$what == what), function(i) {
+    Sam <- godfreyGrid[i, "sample"]
+    uniMoran <- diag(realFitsMoranUniGodfrey[[Sam]][[morName]])
+    names(uniMoran) <- make.names(names(uniMoran))
+    base::do.call(rbind, lapply(selfName(names(realFitsScrambleGodfreyPrepBoth[[i]])), function(nn) {
+      yy <- realFitsScrambleGodfreyPrepBoth[[i]][[nn]]
+      featNames <- sapply(strsplit(yy$featurePair, split = "__"), function(x) {
+        x[switch(what,
+          "Stx" = 2,
+          "Met" = 1
+        )]
+      })
+      boo <- tapply(yy$value, featNames, function(x) sum(x < sigLevel, na.rm = TRUE))
+      data.frame("findings" = boo, "id" = i, "MoransI" = uniMoran[names(boo)], "Method" = nn)
+    }))
+  }))
+  tmp2 <- aggregate(findings ~ MoransI + id + Method, data = tmp, FUN = sum, na.rm = TRUE)
+  cbind(tmp2, godfreyGrid[tmp2$id, ])
+}))
+moransIincurringGodfrey$what <- factor(moransIincurringGodfrey$what,
+  levels = scrambleVec,
+  labels = scrambleLabels, ordered = TRUE
+)
+moransIincurringGodfrey$negFindings <- numFeatsGodfrey - moransIincurringGodfrey$findings
+godfreyNum <- nrow(moltRealGodfrey) + nrow(moltRealGodfreyExist)
+subSamQQ <- 15
+tmpDat <- rbind(moltRealGodfrey[, -2], moltRealGodfreyExist)[sample(godfreyNum, godfreyNum / subSamQQ), 1:6]
+rm(
+  godfreyFiltered, realFitsScrambleGodfrey, moltRealGodfreyExistAgg, moltRealGodfreyExist, moltRealGodfrey, realFitsScrambleGodfreyPrepBoth,
+  realFitsScrambleGodfreyPrepAdj, godfreyScramble, godfreyScrambleExistPrep
+)
+```
+
+```{r vicariScramble}
+nScramblesVicari <- 20
+numFeatsVicariScramble <- 3e1
+vicariGrid <- expand.grid(
+  stringsAsFactors = FALSE, "what" = c("Stx", "Met", "Stx_Met"),
+  "sample" = sampleNamesMouse, "rep" = seq_len(nScramblesVicari)
+)
+if (!file.exists(realFitScrambleFile <- "Results/realFitsScrambleVicari.RData")) {
+  VicariFilteredScramble <- lapply(sampleNamesMouse, function(x) {
+    Stx <- as.matrix(filterFeats(exprObjs[[x]], numFeats = numFeatsVicariScramble))
+    Msi <- filterFeats(msiObjs[[x]], numFeats = numFeatsVicariScramble)
+    rownames(Msi) <- rownames(magpieCoords[[x]]$Msi)
+    list("Stx" = Stx, "Msi" = Msi)
+  })
+  realFitsScrambleVicari <- lapply(seq_len(nrow(vicariGrid)), function(ii) {
+    what <- vicariGrid[ii, "what"]
+    sn <- vicariGrid[ii, "sample"]
+    rep <- vicariGrid[ii, "rep"]
+    xMat <- magpieCoords[[sn]]$Stx
+    yMat <- magpieCoords[[sn]]$Msi
+    if (grepl("Stx", what)) {
+      xMat <- xMat[sample(nrow(xMat)), ]
+    }
+    if (grepl("Met", what)) {
+      yMat <- yMat[sample(nrow(yMat)), ]
+    }
+    Moranres <- sbivar(VicariFilteredScramble[[sn]]$Stx, VicariFilteredScramble[[sn]]$Msi, xMat, yMat,
+      method = "Moran", normX = "rel", normY = "rel"
+    )
+    GAMres <- sbivar(VicariFilteredScramble[[sn]]$Stx, VicariFilteredScramble[[sn]]$Msi, xMat, yMat,
+      families = FamiliesVicari, method = "GAM"
+    )
+    MoranResPerm <- MoransIpermutation(VicariFilteredScramble[[sn]]$Stx, VicariFilteredScramble[[sn]]$Msi, xMat, yMat, nPerms = nPermsScramble, normX = "rel", normY = "rel")
+    MoranRandomShift <- CCtestEtas(VicariFilteredScramble[[sn]]$Stx, VicariFilteredScramble[[sn]]$Msi, magpieCoords[[sn]]$Stx, magpieCoords[[sn]]$Msi, nPerms = nPermsScramble)
+    scrambleResVicari <- list(
+      "MoransI_sbivar" = Moranres, "GAM" = GAMres,
+      "MoranResPerm" = MoranResPerm, "MoranRandomShift" = MoranRandomShift
+    )
+    scrambleResVicari
+  })
+  save(realFitsScrambleVicari, file = realFitScrambleFile)
+} else {
+  load(realFitScrambleFile)
+}
+realFitsScrambleVicariPrep <- lapply(realFitsScrambleVicari, function(x) {
+  nams <- makeRowNames(x$GAM$result)
+  x$GAM$result <- as.matrix(x$GAM$result[, 3:6])
+  rownames(x$GAM$result) <- nams
+  x[c("MoransI_sbivar", "GAM")] <- lapply(x[c("MoransI_sbivar", "GAM")], function(xx) {
+    xx$result[, "pVal"]
+  })
+  x[c("MoranResPerm", "MoranRandomShift")] <- lapply(x[c("MoranResPerm", "MoranRandomShift")], function(yy) {
+    out <- c(yy)
+    names(out) <- sbivar:::makeNames(rownames(yy), colnames(yy))
+    out
+  })
+  names(x)[3:4] <- c("MoransI_permutation", "MoransI_RandomShift")
+  lapply(x, function(yy) {
+    data.frame("value" = yy, "featurePair" = names(yy))
+  })
+})
+rm(realFitsScrambleVicari)
+```
+
+```{r qqplotsGodfrey, fig.cap = "QQ-plots of observed p-values (y-axis) versus standard uniform quantiles (x-axis) for nonparametric simulations based on the Godfrey data, for different methods (colour) when permuting observations of one or two modalities (columns) of the sections (rows). The solid black line has slope 1 and intercept 0.\\label{fig:qqGodfrey}", fig.height=9.5}
+ggplot(data = tmpDat, aes(sample = value, col = Method)) +
+  geom_qq(distribution = stats::qunif, size = 0.25) +
+  facet_grid(cols = vars(what), rows = vars(sample)) +
+  ylab("Observed quantiles") +
+  xlab("Expected quantiles") +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_color_manual(values = powerColours) +
+  theme(
+    strip.text.x = element_text(size = 6.5),
+    strip.text.y = element_text(size = 6),
+    axis.text = element_text(size = 5.5), legend.position = "right"
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 2)))
+rm(tmpDat)
+```
+
+```{r qqplotsVicari, fig.cap = "QQ-plots of observed p-values (y-axis) versus standard uniform quantiles (x-axis) for nonparametric simulations based on the Vicari data, for different methods (colour) when permuting observations of one or two modalities (columns) of the sections (rows). The solid black line has slope 1 and intercept 0.\\label{fig:qqVicari}", fig.height=8}
+moltRealVicari <- melt(realFitsScrambleVicariPrep, id.vars = "featurePair")
+colnames(moltRealVicari)[4:5] <- c("Method", "rep")
+moltRealVicari <- cbind(moltRealVicari, vicariGrid[moltRealVicari[, "rep"], ])
+moltRealVicari$what <- factor(moltRealVicari$what,
+  levels = scrambleVec,
+  labels = scrambleLabels, ordered = TRUE
+)
+moltRealVicari$Method <- factor(moltRealVicari$Method,
+  levels = methLevels,
+  labels = methLabels, ordered = TRUE
+)
+moltRealVicariAgg <- aggregate(data = moltRealVicari, x = value ~ Method + sample + what, FUN = getPower)
+moltRealVicariAgg$Dataset <- "Vicari"
+ggplot(data = moltRealVicari[sample(nrow(moltRealVicari), nrow(moltRealVicari) / subSamQQ), 1:7], aes(sample = value, col = Method)) +
+  geom_qq(distribution = stats::qunif, size = 0.25) +
+  facet_grid(cols = vars(what), rows = vars(sample)) +
+  ylab("Observed quantiles") +
+  xlab("Expected quantiles") +
+  geom_abline(slope = 1, intercept = 0) +
+  scale_color_manual(values = powerColours) +
+  theme(
+    strip.text.x = element_text(size = 6.5),
+    legend.key.size = unit(1, "lines"),
+    strip.text.y = element_text(size = 6),
+    axis.text = element_text(size = 5.5), legend.position = "right"
+  ) +
+  guides(color = guide_legend(override.aes = list(size = 2)))
+rm(moltRealVicari)
+```
+
+```{r boxplotMoransIGodfrey, fig.cap = paste("Boxplots of univariate Moran's I (y-axis) of the", numFeatsGodfrey, "most abundant features per section (columns) in the Godfrey data. The dotted horizontal line indicates 0.\\label{fig:boxplotMoransIgodfrey}"), fig.height = 3.5}
+moranIsGodfrey <- melt(lapply(realFitsMoranUniGodfrey, function(x) x[c("IxyStx", "IxyMsi")]))
+colnames(moranIsGodfrey) <- c("Var1", "Var2", "MoransI", "Modality", "Sample")
+moranIsGodfrey <- moranIsGodfrey[moranIsGodfrey$Var1 == moranIsGodfrey$Var2, ] # Only univariate Moran's I
+moranIsGodfrey$Modality <- factor(moranIsGodfrey$Modality,
+  levels = c("IxyStx", "IxyMsi"),
+  labels = c("Transcriptome", "Metabolome")
+)
+ggplot(moranIsGodfrey, aes(y = MoransI, x = Modality, fill = Modality)) +
+  geom_boxplot() +
+  facet_grid(~Sample) +
+  xlab("") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), strip.text = element_text(size = 6.1)) +
+  geom_hline(yintercept = 0, linetype = "dotted") +
+  ylab("Univariate Moran's I")
+```
+
+```{r boxplotMoransIVicari, fig.height = 3.5, fig.cap = paste("Boxplots of univariate Moran's I (y-axis) of the", numFeatsVicariScramble, "most abundant features per section (columns) in the Vicari data. The dotted horizontal line indicates 0.\\label{fig:boxplotMoransIvicari}")}
+moranIsVicari <- melt(lapply(realFitsMoranUniVicari, function(x) x[c("IxyStx", "IxyMsi")]))
+colnames(moranIsVicari) <- c("Var1", "Var2", "MoransI", "Modality", "Sample")
+moranIsVicari$Modality <- factor(moranIsVicari$Modality,
+  levels = c("IxyStx", "IxyMsi"),
+  labels = c("Transcriptome", "Metabolome")
+)
+moranIsVicari <- moranIsVicari[moranIsVicari$Var1 == moranIsVicari$Var2, ]
+ggplot(moranIsVicari, aes(y = MoransI, x = Modality, fill = Modality)) +
+  geom_boxplot() +
+  facet_grid(~Sample) +
+  xlab("") +
+  theme(axis.text.x = element_blank(), axis.ticks.x = element_blank(), strip.text = element_text(size = 5.2)) +
+  geom_hline(yintercept = 0, linetype = "dotted") +
+  ylab("Univariate Moran's I")
+```
+
+```{r moransIincurringfalseVicariPrep}
+moransIincurringVicari <- base::do.call(rbind, lapply(scrambleVec[1:2], function(what) {
+  morName <- switch(what,
+    "Stx" = "IxyMsi",
+    "Met" = "IxyStx"
+  ) # Take non-permuted modality
+  tmp <- base::do.call(rbind, lapply(id <- which(vicariGrid$what == what), function(i) {
+    Sam <- vicariGrid[i, "sample"]
+    uniMoran <- diag(realFitsMoranUniVicari[[Sam]][[morName]])
+    names(uniMoran) <- make.names(names(uniMoran))
+    base::do.call(rbind, lapply(selfName(names(realFitsScrambleVicariPrep[[i]])), function(nn) {
+      yy <- realFitsScrambleVicariPrep[[i]][[nn]]
+      featNames <- sapply(strsplit(yy$featurePair, split = "__"), function(x) {
+        x[switch(what,
+          "Stx" = 2,
+          "Met" = 1
+        )]
+      })
+      boo <- tapply(yy$value, featNames, function(x) sum(x < sigLevel, na.rm = TRUE))
+      data.frame(
+        "findings" = boo, "id" = i,
+        "MoransI" = uniMoran[names(boo)], "Method" = nn
+      )
+    }))
+  }))
+  tmp2 <- aggregate(findings ~ MoransI + id + Method, data = tmp, FUN = sum, na.rm = TRUE)
+  cbind(tmp2, vicariGrid[tmp2$id, ])
+}))
+moransIincurringVicari$what <- factor(moransIincurringVicari$what,
+  levels = scrambleVec,
+  labels = scrambleLabels, ordered = TRUE
+)
+```
+
+```{r moransIincurringfalseVicari, fig.cap = "Predicted probability of detection as significant finding (y-axis) as a function of univariate Moran's I (x-axis) for different methods (colour), non-permuted modalities (columns) and dataset (rows) in the nonparametric simulation, modeled by a generalized linear mixed model with binomial outcome distribution (see text for details). The predictions are only shown within the range of observed univariate Moran's I values. The horizontal dotted line indicates the significance level of 0.05.\\label{fig:moransIuniFindings}", fig.height = 4.5}
+moransIincurringVicari$negFindings <- numFeatsGodfrey - moransIincurringVicari$findings
+fitsMoranGodfrey <- tapply(selfName(seq_len(nrow(moransIincurringGodfrey))), as.character(moransIincurringGodfrey$Method),
+  FUN = function(i) {
+    glmer(cbind(findings, negFindings) ~ MoransI * what + (1 | sample), family = binomial(), data = moransIincurringGodfrey[i, ])
+  }
+)
+fitsMoranVicari <- tapply(selfName(seq_len(nrow(moransIincurringVicari))), as.character(moransIincurringVicari$Method),
+  FUN = function(i) {
+    glmer(cbind(findings, negFindings) ~ MoransI * what + (1 | sample), family = binomial(), data = moransIincurringVicari[i, ])
+  }
+)
+predGridGod <- base::do.call(rbind, lapply(unique(moransIincurringGodfrey$what), function(what) {
+  Range <- range(moransIincurringGodfrey$MoransI[moransIincurringGodfrey$what == what])
+  data.frame("MoransI" = seq(Range[1], Range[2], length.out = 200), "what" = what)
+}))
+# Limit to observed univariate Moran's I
+fitsMoranGodfreyPred <- base::do.call(rbind, lapply(names(fitsMoranGodfrey), function(x) {
+  data.frame(predGridGod,
+    Dataset = "Godfrey", Method = x,
+    "Probability_of_detection" = predict(fitsMoranGodfrey[[x]], newdata = predGridGod, re.form = NA, type = "response")
+  )
+}))
+predGridVic <- base::do.call(rbind, lapply(unique(moransIincurringVicari$what), function(what) {
+  Range <- range(moransIincurringVicari$MoransI[moransIincurringVicari$what == what])
+  data.frame("MoransI" = seq(Range[1], Range[2], length.out = 200), "what" = what)
+}))
+fitsMoranVicariPred <- base::do.call(rbind, lapply(names(fitsMoranVicari), function(x) {
+  data.frame(predGridVic,
+    Dataset = "Vicari", Method = x,
+    "Probability_of_detection" = predict(fitsMoranVicari[[x]], newdata = predGridVic, re.form = NA, type = "response")
+  )
+}))
+fitsMoranGodfreyPred <- factorizeDf(fitsMoranGodfreyPred)
+fitsMoranVicariPred <- factorizeDf(fitsMoranVicariPred)
+ggplot(data = rbind(fitsMoranGodfreyPred, fitsMoranVicariPred), aes(y = Probability_of_detection, x = MoransI, col = Method)) +
+  geom_line(linewidth = .35) +
+  scale_colour_manual(values = powerColours) +
+  facet_grid(rows = vars(Dataset), cols = vars(what), scales = "free_x") +
+  ylab("Probability of detection") +
+  xlab("Univariate Moran's I") +
+  theme(strip.text.x = element_text(size = 8.5), strip.text.y = element_text(size = 8.5)) +
+  geom_hline(yintercept = sigLevel, linetype = "dotted")
+rm(moransIincurringVicari, fitsMoranVicariPred, fitsMoranGodfreyPred, fitsMoranVicari, fitsMoranGodfrey)
+```
+
+\clearpage
+
+```{r overallPlotNonPar, include = FALSE}
+moltRealAll <- rbind(moltRealGodfreyExistAggAll, moltRealVicariAgg)
+moltRealAllAgg <- aggregate(data = moltRealAll[moltRealAll$Method %in% methLabelsShow, ], value ~ what + Dataset + Method, FUN = mean)
+ggplot(data = moltRealAllAgg, aes(x = Method, y = value, col = Method)) +
+  geom_point(size = 2.1) +
+  facet_grid(rows = vars(what), cols = vars(Dataset), scales = "free_x", space = "free_x") +
+  ylab("Type I error") +
+  xlab("") +
+  scale_color_manual(values = powerColours) +
+  geom_hline(yintercept = sigLevel, linetype = "dotted") +
+  (ThemeSims <- theme(
+    strip.text = element_text(size = 10.5),
+    axis.text.x = element_blank(),
+    axis.text.y = element_text(size = 10.5),
+    axis.title.y = element_text(size = 13),
+    axis.ticks.x = element_blank(),
+    legend.text = element_text(size = 10.5),
+    legend.title = element_text(size = 13)
+  ))
+ggsave("GraphsPaper/nonParAll.pdf", height = 5.5)
+```
+
+```{r rmNonpar}
+rm(realFitsScrambleVicariPrep, godfreyGrid, moltRealGodfreyAgg, moransIincurringGodfrey, moltRealGodfreyExistAggAll, moltRealVicariAgg, realFitsMoranUniGodfrey, realFitsMoranUniVicari, vicariGrid, realFitsScrambleGodfreyPrep, realFitsScrambleVicari, scrambleGodfreyFdr, distMat, moranIsGodfrey, moltRealAll, predGridGod, predGridVic, moranIsVicari, moltRealAllAgg, ThemeSims)
+```
+
+\clearpage
+
+#### Multi-image analysis
+
+```{r vicariMultiScrambleRes, fig.cap = "Type I error (y-axis) of different methods (colour) and weighting schemes (x-axis) for multi-image analysis of the Godfrey and Vicari data (columns) after scrambling one or two modalities (rows).\\label{fig:nonparMulti}", fig.height = 5.1, fig.width = 8}
+GodfreyGroups <- selfName(c("BC", "LC"))
+nScramsGodfrey <- 2e1
+numFeatsGodfrey <- 3e1
+scrambleGodfreyGrid <- expand.grid(
+  stringsAsFactors = FALSE, "group" = GodfreyGroups,
+  "what" = c("Stx", "Met", "Stx_Met"), "rep" = seq_len(nScramsGodfrey)
+)
+if (!file.exists(scrambleFitGodfreyMultiFile <- "Results/scrambleFitsGodfreyMulti.RData")) {
+  godfreyFilteredAll <- lapply(GodfreyGroups, function(x) {
+    StxFeats <- filterFeatsList(lapply(godfrey[grep(x, samplesGodfrey)], function(y) y$Stx), numFeatsGodfrey)
+    MsiFeats <- filterFeatsList(lapply(godfrey[grep(x, samplesGodfrey)], function(y) y$Msi), numFeatsGodfrey)
+    list(
+      "Stx" = lapply(godfrey[grep(x, samplesGodfrey)], function(y) y$Stx[, StxFeats]),
+      "Msi" = lapply(godfrey[grep(x, samplesGodfrey)], function(y) y$Msi[, MsiFeats]),
+      "Coord" = lapply(godfrey[grep(x, samplesGodfrey)], function(y) y$Coord)
+    )
+  })
+  formRep <- formula(out ~ 1)
+  scrambleFitsGodfreyMulti <- lapply(seq_len(nrow(scrambleGodfreyGrid)), function(i) {
+    what <- scrambleGodfreyGrid[i, "what"]
+    gr <- scrambleGodfreyGrid[i, "group"]
+    rep <- scrambleGodfreyGrid[i, "rep"]
+    id <- grep(gr, samplesGodfrey)
+    StxList <- godfreyFilteredAll[[gr]]$Stx
+    MetList <- godfreyFilteredAll[[gr]]$Msi
+    CoordList <- godfreyFilteredAll[[gr]]$Coord
+    if (grepl("Stx", what)) {
+      StxList <- lapply(StxList, function(x) {
+        tmp <- x[sample(nrow(x)), ]
+        rownames(tmp) <- rownames(x)
+        tmp
+      })
+    }
+    if (grepl("Met", what)) {
+      MetList <- lapply(MetList, function(x) {
+        tmp <- x[sample(nrow(x)), ]
+        rownames(tmp) <- rownames(x)
+        tmp
+      })
+    }
+    MoransI_sbivar <- sbivar(
+      X = StxList, Y = MetList, Cx = CoordList, Ey = CoordList, findVariances = TRUE,
+      method = "Moran's I", verbose = FALSE
+    )
+    splineRes <- sbivar(
+      X = StxList, Y = MetList, Cx = CoordList, Ey = CoordList, findVariances = TRUE,
+      method = "GAMs", verbose = FALSE, families = FamiliesGodfrey
+    )
+    corTest <- sbivar(X = StxList, Y = MetList, method = "Correlation", verbose = FALSE)
+    # Fit linear models
+    MoransI_raw <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      verbose = FALSE,
+      Formula = formRep, inverseWeigh = FALSE, scaleByMax = FALSE
+    ))
+    MoransI_weighted <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      Formula = formRep,
+      inverseWeigh = TRUE, scaleByMax = FALSE, verbose = FALSE
+    ))
+    MoransI_weighted_scaled <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      Formula = formRep, inverseWeigh = TRUE, scaleByMax = TRUE, verbose = FALSE
+    ))
+    MoransI_scaled <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      Formula = formRep, inverseWeigh = FALSE,
+      scaleByMax = TRUE, verbose = FALSE
+    ))
+    GAM_raw <- extractResultsMulti(fitLinModels(splineRes, Formula = formRep, inverseWeigh = FALSE, verbose = FALSE))
+    GAM_weighted <- extractResultsMulti(fitLinModels(splineRes, Formula = formRep, inverseWeigh = TRUE, verbose = FALSE))
+    Cor_raw <- extractResultsMulti(fitLinModels(corTest, Formula = formRep, verbose = FALSE, inverseWeigh = FALSE))
+    outList <- lapply(list(
+      "MoransI_raw" = MoransI_raw, "MoransI_weighted" = MoransI_weighted,
+      "MoransI_weighted_scaled" = MoransI_weighted_scaled, "MoransI_scaled" = MoransI_scaled,
+      "GAM_raw" = GAM_raw, "GAM_weighted" = GAM_weighted, "Cor_raw" = Cor_raw
+    ), function(x) x$result$Intercept)
+    outList
+  })
+  save(file = scrambleFitGodfreyMultiFile, scrambleFitsGodfreyMulti)
+} else {
+  load(scrambleFitGodfreyMultiFile)
+}
+scrambleVicariGrid <- expand.grid(
+  stringsAsFactors = FALSE, "what" = c("Stx", "Met", "Stx_Met"),
+  "rep" = seq_len(nScramblesVicari)
+)
+indivMouse <- sapply(sampleNamesMouse, substr, 1, 10)
+designVicari <- data.frame("mouse" = indivMouse)
+if (!file.exists(scrambleFitVicariMultiFile <- "Results/scrambleFitsVicariMulti.RData")) {
+  StxFeats <- filterFeatsList(exprObjs[sampleNamesMouse], numFeatsVicariScramble)
+  MetFeats <- filterFeatsList(msiObjs[sampleNamesMouse], numFeatsVicariScramble)
+  MetList <- lapply(msiObjs[sampleNamesMouse], function(x) x[, intersect(colnames(x), MetFeats), drop = FALSE])
+  StxList <- lapply(exprObjs[sampleNamesMouse], function(x) as.matrix(x[, StxFeats]))
+  CoordStxList <- lapply(magpieCoords[sampleNamesMouse], function(x) x$Stx)
+  CoordMetList <- lapply(magpieCoords[sampleNamesMouse], function(x) x$Msi)
+  formRep <- formula(out ~ mouse)
+  scrambleFitsVicariMulti <- lapply(seq_len(nrow(scrambleVicariGrid)), function(i) {
+    what <- scrambleVicariGrid[i, "what"]
+    rep <- scrambleVicariGrid[i, "rep"]
+    if (grepl("Stx", what)) {
+      StxList <- lapply(StxList, scrambleRows)
+    }
+    if (grepl("Met", what)) {
+      MetList <- lapply(MetList, scrambleRows)
+    }
+    MoransI_sbivar <- sbivar(
+      X = StxList, Y = MetList, Cx = CoordStxList,
+      Ey = CoordMetList, findVariances = TRUE, normX = "rel", normY = "rel",
+      method = "Moran's I", verbose = FALSE
+    )
+    splineRes <- sbivar(
+      X = StxList, Y = MetList, Cx = CoordStxList,
+      Ey = CoordMetList, findVariances = TRUE,
+      method = "GAMs", verbose = FALSE, families = FamiliesVicari
+    )
+    # Fit linear models
+    MoransI_raw <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      verbose = FALSE,
+      designDf = designVicari, Formula = formRep, inverseWeigh = FALSE, scaleByMax = FALSE
+    ))
+    MoransI_weighted <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      designDf = designVicari,
+      Formula = formRep, inverseWeigh = TRUE, scaleByMax = FALSE, verbose = FALSE
+    ))
+    MoransI_weighted_scaled <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      designDf = designVicari,
+      Formula = formRep, inverseWeigh = TRUE, scaleByMax = TRUE, verbose = FALSE
+    ))
+    MoransI_scaled <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      designDf = designVicari,
+      Formula = formRep, inverseWeigh = FALSE, scaleByMax = TRUE, verbose = FALSE
+    ))
+    GAM_raw <- extractResultsMulti(fitLinModels(splineRes,
+      designDf = designVicari, Formula = formRep,
+      inverseWeigh = FALSE, verbose = FALSE
+    ))
+    GAM_weighted <- extractResultsMulti(fitLinModels(splineRes,
+      designDf = designVicari, Formula = formRep,
+      inverseWeigh = TRUE, verbose = FALSE
+    ))
+    outList <- lapply(list(
+      "MoransI_raw" = MoransI_raw, "MoransI_weighted" = MoransI_weighted,
+      "MoransI_weighted_scaled" = MoransI_weighted_scaled, "MoransI_scaled" = MoransI_scaled,
+      "GAM_raw" = GAM_raw, "GAM_weighted" = GAM_weighted
+    ), function(x) x$result$Intercept)
+    outList
+  })
+  save(scrambleFitsVicariMulti, file = scrambleFitVicariMultiFile)
+} else {
+  load(scrambleFitVicariMultiFile)
+}
+scramGodMultMolt <- melt(lapply(scrambleFitsGodfreyMulti, function(x) lapply(x, function(y) y[, "pVal"])))
+colnames(scramGodMultMolt) <- c("pvalue", "Method", "replic")
+scramGodMultMolt <- cbind(scramGodMultMolt, scrambleGodfreyGrid[scramGodMultMolt$replic, ])
+scramVicMultMolt <- melt(lapply(scrambleFitsVicariMulti, function(x) lapply(x, function(y) y[, "pVal"])))
+colnames(scramVicMultMolt) <- c("pvalue", "Method", "replic")
+scramVicMultMolt <- cbind(scramVicMultMolt, scrambleVicariGrid[scramVicMultMolt$replic, ])
+scramVicMultMolt$group <- "Vicari"
+scramAllMultMoltAgg <- aggregate(data = rbind(scramGodMultMolt, scramVicMultMolt), pvalue ~ Method + group + what, FUN = getPower)
+scramAllMultMoltAgg$what <- factor(scramAllMultMoltAgg$what,
+  levels = scrambleVec,
+  labels = scrambleLabels, ordered = TRUE
+)
+scramAllMultMoltAgg$Weight <- "Raw"
+scramAllMultMoltAgg$Weight[grepl(x = scramAllMultMoltAgg$Method, pattern = "scaled")] <- "Scaled"
+scramAllMultMoltAgg$Weight[grepl(x = scramAllMultMoltAgg$Method, pattern = "weighted")] <- "Weighted"
+scramAllMultMoltAgg$Weight[grepl(x = scramAllMultMoltAgg$Method, pattern = "weighted") & grepl(x = scramAllMultMoltAgg$Method, pattern = "scaled")] <- "Scaled and weighted"
+scramAllMultMoltAgg$Weight <- factor(scramAllMultMoltAgg$Weight, levels = c("Raw", "Scaled", "Weighted", "Scaled and weighted"), ordered = TRUE)
+scramAllMultMoltAgg$Method[grepl(x = scramAllMultMoltAgg$Method, pattern = "Moran")] <- "MoransI_sbivar"
+scramAllMultMoltAgg$Method[grepl(x = scramAllMultMoltAgg$Method, pattern = "GAM")] <- "GAM"
+scramAllMultMoltAgg$Method[grepl(x = scramAllMultMoltAgg$Method, pattern = "Cor")] <- "PearsonCor"
+scramAllMultMoltAgg$Method <- factor(scramAllMultMoltAgg$Method, levels = methLevels, labels = methLabels, ordered = TRUE)
+scramAllMultMoltAgg$group <- factor(scramAllMultMoltAgg$group, levels = c(GodfreyGroups, "Vicari"), labels = c("Godfrey: breast cancer", "Godrey: lung cancer", "Vicari: mouse"), ordered = TRUE)
+ggplot(
+  scramAllMultMoltAgg[scramAllMultMoltAgg$Weight %in% c("Raw", "Scaled", "Weighted"), ],
+  aes(x = Weight, y = pvalue, col = Method)
+) +
+  geom_jitter(width = .12) +
+  facet_grid(rows = vars(what), cols = vars(group)) +
+  ylab("Type I error") +
+  xlab("") +
+  scale_color_manual(values = powerColours) +
+  geom_hline(yintercept = sigLevel, linetype = "dotted") +
+  theme(strip.text = element_text(size = 7.5), legend.position = "top")
+rm(scramVicMultMolt, scrambleFitsVicariMulti, scramAllMultMoltAgg, scrambleFitsGodfreyMulti, scramGodMultMolt)
+baa <- gc(verbose = FALSE)
+```
+
+\clearpage
+
+### Parametric simulations
+
+#### Single-image analysis
+
+\fref{fig:MoransIVar} demonstrates empirically that our variance estimator $tr(\mb W^t \bs \Sigma_x \mb W \bs \Sigma_y)$ is accurate, whereas the variance estimator assuming i.i.d. observations ($tr(\mb W^t \mb W)$ as in *SpatialDM* by \textcite{Li2023} and by \textcite{DeTomaso2021}) underestimates the variance in presence of SAC. \fref{fig:qqParSim} shows qq-plots of the p-values for all methods the null scenarios. \fref{fig:PearsonTypeIerror} demonstrates how Pearson correlation and other methods suffer from type I error inflation only when there is SAC in both variables. \fref{fig:timingsN} shows average time consumption for the different methods on simulated datasets in the "no spatial pattern" scenario with joint coordinate sets for the number of spots sizes increasing as `r samSizesJoint`, over 20 replicates, on an Intel Core i5-11400H 2.70GHz processor.
+
+```{r moranVariances, fig.cap = "Empirical variances of bivariate Moran's I (y-axis, dashed black line) as a function of number of spots (x-axis), decay parameter of the weight matrix (colums) and spatial pattern under the independence null (rows). The black dots indicate the estimated variance under the randomisation null, the brown dots are \\sbivar's estimates under the independence null. The y-axis is on the log scale.\\label{fig:MoransIVar}"}
+jointGridAltNull <- expand.grid(stringsAsFactors = FALSE, "samSize" = samSizesJoint, "spatPats" = spatPatsShow[1:2])
+if (!file.exists(jointNewMoransFile <- "Results/JointNewResMoran.RData")) {
+  jointResNewMoran <- lapply(seq_len(nrow(jointGridAltNull)), function(ii) {
+    spatPat <- jointGridAltNull[ii, "spatPats"]
+    n <- jointGridAltNull[ii, "samSize"]
+    xMat <- makeCoordGrid(n, xMin, xMax)
+    dat <- makeXY(xMat, xMat,
+      what = spatPat, nSims = 30,
+      nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+    )
+    MoransI <- sbivar(dat$x,
+      returnSEsMoransI = TRUE,
+      dat$y, Cx = xMat, method = "Moran's I", verbose = FALSE
+    )$result
+    obsMoran <- MoransI[, !colnames(MoransI) %in% c("pVal", "pAdj")]
+    indepVars <- sapply(eval(formals(sbivar:::sbivarSingle)$etas), function(eta) {
+      wm <- sbivar:::buildWeightMat(xMat, xMat, wo = "Gauss", eta = eta)
+      sum(wm^2)
+    })
+    names(indepVars) <- colnames(obsMoran)[1:3]
+    list("obsMoran" = obsMoran, "indepVars" = indepVars)
+  })
+  save(jointResNewMoran, file = jointNewMoransFile)
+} else {
+  load(jointNewMoransFile)
+}
+GPid <- grep("GP", jointGridAltNull$spatPat)
+jointResNewMoran[GPid] <- lapply(jointResNewMoran[GPid], function(x) {
+  x$obsMoran <- x$obsMoran[getSameNamesId(rownames(x$obsMoran)), ]
+  x
+})
+indepVars <- melt(lapply(seq_along(jointResNewMoran), function(x) cbind(jointResNewMoran[[x]]$indepVars) / (jointGridAltNull[x, "samSize"] - 1)^2))
+colnames(indepVars) <- c("what", "foo", "value", "rep")
+indepVarsMolt <- cbind(indepVars, jointGridAltNull[indepVars[, "rep"], ])
+trueVars <- melt(lapply(jointResNewMoran, function(x) cbind(apply(x$obsMoran[, 1:3], 2, var))))
+colnames(trueVars) <- c("what", "foo", "value", "rep")
+trueVarsMolt <- cbind(trueVars, jointGridAltNull[trueVars[, "rep"], ])
+estVars <- melt(lapply(jointResNewMoran, function(x) cbind(colMeans(x$obsMoran[, 4:6]^2))))
+colnames(estVars) <- c("what", "foo", "value", "rep")
+estVarsMolt <- cbind(estVars, jointGridAltNull[estVars[, "rep"], ])
+estVarsMolt$what <- gsub("SE\\(Ixy\\)_", "", estVarsMolt$what)
+trueVarsMolt$what <- gsub("Ixy_", "", trueVarsMolt$what)
+indepVarsMolt$what <- gsub("Ixy_", "", indepVarsMolt$what)
+estVarsMolt$spatPats <- factor(estVarsMolt$spatPats, levels = spatPats, labels = spatPatsLabels, ordered = TRUE)
+trueVarsMolt$spatPats <- factor(trueVarsMolt$spatPats, levels = spatPats, labels = spatPatsLabels, ordered = TRUE)
+indepVarsMolt$spatPats <- factor(indepVarsMolt$spatPats, levels = spatPats, labels = spatPatsLabels, ordered = TRUE)
+etas <- eval(formals(sbivar:::sbivarSingle)$etas)
+estVarsMolt$what <- factor(estVarsMolt$what, levels = etas, labels = etas, ordered = TRUE)
+trueVarsMolt$what <- factor(trueVarsMolt$what, levels = etas, labels = etas, ordered = TRUE)
+indepVarsMolt$what <- factor(indepVarsMolt$what, levels = etas, labels = etas, ordered = TRUE)
+ggplot(data = estVarsMolt, aes(x = samSize, y = value)) +
+  geom_point(col = powerColours["Moran's I (independence) [sbivar]"]) +
+  facet_grid(spatPats ~ what, scales = "free_y") +
+  theme(axis.text.x = element_text(angle = 90)) +
+  geom_line(data = trueVarsMolt, linewidth = 0.4, linetype = "dashed") +
+  geom_point(data = indepVarsMolt, col = "black") +
+  scale_y_log10() +
+  xlab("Number of spots") +
+  ylab("Var(I_xy)")
+```
+
+```{r simJointExist}
+if (!file.exists(jointFile <- "Results/JointRes.RData")) {
+  xMat <- makeCoordGrid(n, xMin, xMax)
+  distMat <- as.matrix(stats::dist(rbind(xMat, xMat)))
+  wm <- sbivar:::buildWeightMat(xMat, xMat, wo = "Gauss", eta = etaSim)
+  tp <- ppp(xMat[, "x"], xMat[, "y"])
+  listW <- mat2listw(wm, style = "M")
+  listWgeary <- listw2U(listW)
+  dgr <- as.matrix(spatialreg::as_dgRMatrix_listw(listWgeary))
+  idDgr <- which(dgr != 0)
+  wc <- spweights.constants(listWgeary, zero.policy = FALSE, adjust.n = TRUE)
+  prepCzaplewski <- prepareCzaplewskiWeights(wm)
+  H <- diag(n) - 1 / n
+  ns <- n / sum(wm)
+  fac2 <- (n / ((n - 1) * sum(wm)))^2
+  IxyvarSpatialDMSqrt <- sqrt(fac2 * tr(crossprod(H %*% wm %*% H))) # Crossproduct as in code rather than square as in supplementary
+  xSeq <- seq(xMin, xMax, length.out = sqrt(n))
+  jointRes <- lapply(seq_len(nrow(jointGrid)), function(ii) { #
+    spatPat <- jointGrid[ii, "spatPats"]
+    rep <- jointGrid[ii, "rep"]
+    dat <- makeXY(xMat, xMat,
+      what = spatPat, distMat = distMat, nSims = nFeats * (1 - propFeatNull),
+      nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+    )
+    datNull <- makeXY(xMat, xMat,
+      what = "none", distMat = distMat, nSims = nFeats * propFeatNull,
+      nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+    )
+    colnames(dat$x) <- paste0(colnames(dat$x), "_TPx")
+    colnames(dat$y) <- paste0(colnames(dat$y), "_TPy")
+    dat$x <- cbind(dat$x, datNull$x)
+    dat$y <- cbind(dat$y, datNull$y)
+    xScaled <- scale(dat$x, center = TRUE, scale = FALSE)
+    yScaled <- scale(dat$y, center = TRUE, scale = FALSE)
+    ResExist <- loadBalanceBplapply(seq_len(nrow(featGrid)), function(bb) {
+      i <- featGrid[bb, "i"]
+      j <- featGrid[bb, "j"]
+      ## Czaplewski
+      pValCza <- {
+        Ixy <- as.vector(dat$x[, i] %*% wm %*% dat$y[, j])
+        resCza <- getVarCzaplewski(dat$x[, i], dat$y[, j], prepCzaplewski)
+        makePval((Ixy - resCza["EIxy"]) / sqrt(resCza["varIxy"]))
+      }
+      ## SpatialDM
+      pValSpatialDM <- {
+        xCen <- xScaled[, i]
+        yCen <- yScaled[, j]
+        Ixynorm <- ns * as.vector(xCen %*% wm %*% yCen) / sqrt(sum(xCen^2) * sum(yCen^2))
+        makePval(Ixynorm / IxyvarSpatialDMSqrt) # Checked with python code
+      }
+      ## Permutation
+      IxyPvalPerm <- {
+        permIxy <- vapply(integer(nPerms), FUN.VALUE = Ixy, function(jjj) {
+          as.vector(dat$x[sample(n), i] %*% wm %*% dat$y[sample(n), j])
+        })
+        getPermPval(Ixy, permIxy)
+      }
+      # SpaGene
+      spaGenePval <- SpaGene_LR(expr = rbind("x" = dat$x[, i], "y" = dat$y[, j]), location = xMat, LRpair = data.frame("x" = "x", "y" = "y"), normalize = FALSE, perm = nPerms)[["pval"]]
+      # Lee's L, using spdep
+      leeObj <- lee.test(dat$x[, i], dat$y[, j], listW)$p.value
+      leeObjPerm <- lee.mc(dat$x[, i], dat$y[, j], listW, nsim = nPerms)$p.value
+      # Geary's C
+      gearCperm <- {
+        obsGeary <- geary.bi.fast(dat$x[, i], dat$y[, j], wc, dgr)
+        outerMat <- outer(dat$x[, i], dat$y[, j], "-")^2
+        permGeary <- wc$n1 / wc$S0 * vapply(integer(nPerms), FUN.VALUE = obsGeary, function(jjj) {
+          sum(dgr[idDgr] * outerMat[sample(n), sample(n)][idDgr])
+        })
+        getPermPval(obsGeary, permGeary)
+      }
+      # Pearson correlation:
+      pearRes <- cor.test(dat$x[, i], dat$y[, j])$p.value
+      # Random shift test
+      CCres <- CCtestWrapper(
+        x = dat$x[, i], y = dat$y[, j], xSeq = xSeq, N.shifts = nPerms,
+        ySeq = xSeq, tp = tp
+      )$p.value
+      out <- rbind(
+        "MoransI_Czaplewski" = pValCza,
+        "MoransI_SpatialDM" = pValSpatialDM,
+        "MoransI_permutation" = IxyPvalPerm,
+        "SpaGene" = spaGenePval, "LeesL_asymptotic" = leeObj,
+        "LeesL_permutation" = leeObjPerm, "GearysC_permutation" = gearCperm,
+        "PearsonCor" = pearRes, "RandomShift" = CCres
+      )
+      colnames(out) <- c("pVal")
+      out
+    })
+    # Random shift Moran's I
+    CCresMoran <- CCtestEtas(dat$x, dat$y, xMat, xMat, nPerms, verbose = FALSE)
+    CCresMoranP <- c(CCresMoran)
+    names(CCresMoranP) <- apply(expand.grid(rownames(CCresMoran), colnames(CCresMoran)), 1, paste, collapse = "__")
+    MoransI <- sbivar(MoransI_sbivar <- dat$x, dat$y, Cx = xMat, method = "Moran's I", verbose = FALSE)$result
+    rownames(MoransI) <- makeRowNames(MoransI)
+    gpRes <- sbivar(dat$x, dat$y, Cx = xMat, method = "GP", verbose = TRUE)$result
+    rownames(gpRes) <- makeRowNames(gpRes)
+    splineRes <- sbivar(dat$x, dat$y, Cx = xMat, method = "GAMs", verbose = FALSE)$result
+    rownames(splineRes) <- makeRowNames(splineRes)
+    splineResGAMM <- sbivar(dat$x, dat$y, Cx = xMat, Gamm = TRUE, method = "GAMs", verbose = FALSE)$result
+    rownames(splineResGAMM) <- makeRowNames(splineResGAMM)
+    modtTest <- sbivar(dat$x, dat$y, Cx = xMat, method = "Modif", verbose = FALSE)$result
+    rownames(modtTest) <- makeRowNames(modtTest)
+    pVals <- cbind(
+      "MoransI_sbivar" = MoransI[, "pVal"], "GAM" = splineRes[rownames(MoransI), "pVal"],
+      "GAMM" = splineResGAMM[rownames(MoransI), "pVal"],
+      "modTtest" = modtTest[rownames(MoransI), "pVal"], "MoransI_RandomShift" = CCresMoranP[rownames(MoransI)]
+    )
+    gamCors <- splineRes[, c("corxy", "se.corxy")]
+    ResNew <- list("pVal" = pVals, "gamCors" = gamCors)
+    list("Exist" = ResExist, "New" = ResNew)
+  })
+  save(jointRes, file = jointFile)
+} else {
+  load(jointFile)
+}
+```
+
+```{r parExistRes}
+spatLabsNull <- c("No spatial pattern", "Independent GPs")
+featGridPower <- expand.grid("i" = c(paste0(seq_len(nFeats * (1 - propFeatNull)), "TP"), seq_len(nFeats * propFeatNull)), "j" = c(paste0(seq_len(nFeats * (1 - propFeatNull)), "TP"), seq_len(nFeats * propFeatNull)))
+namesTmp <- paste0("feat", featGridPower$i, "X__", "feat", featGridPower$j, "Y")
+moltExistOld <- melt(lapply(jointRes, function(x) {
+  tmp <- x$Exist
+  names(tmp) <- namesTmp
+  lapply(tmp, function(xx) {
+    xx[, "pVal", drop = FALSE]
+  })
+}))
+colnames(moltExistOld) <- c("Method", "what", "value", "featurePair", "rep")
+moltExistNew <- melt(lapply(jointRes, function(x) x$New$pVal))
+colnames(moltExistNew) <- c("featurePair", "Method", "value", "rep")
+moltExist <- rbind(moltExistOld[, c("featurePair", "Method", "value", "rep")], moltExistNew)
+moltExist <- cbind(moltExist[, c("featurePair", "Method", "value")], jointGrid[moltExist[, "rep"], ])
+moltExist <- factorizeDf(moltExist)
+rm(moltExistNew, moltExistOld)
+moltExistSplitFeat <- simplify2array(strsplit(moltExist$featurePair, "__"))
+moltExistSplitFeat[1, ] <- gsub("_", "", gsub("x", "", gsub("X", "", moltExistSplitFeat[1, ])))
+moltExistSplitFeat[2, ] <- gsub("_", "", gsub("y", "", gsub("Y", "", moltExistSplitFeat[2, ])))
+moltExist$TP <- ((moltExist$spatPats != "Dependent GPs") | (moltExistSplitFeat[1, ] == moltExistSplitFeat[2, ])) & (str_count(moltExist$featurePair, "TP") == 2) & !(moltExist$spatPats %in% spatLabsNull)
+moltExistPaggPower <- aggregate(moltExist[moltExist$TP, ],
+  value ~ Method + spatPats,
+  FUN = getPower
+)
+moltExistPaggPower$what <- "Power"
+moltExistPaggTypeIerror <- aggregate(moltExist[!moltExist$TP, ],
+  value ~ Method + spatPats,
+  FUN = getPower
+)
+moltExistPaggTypeIerror$what <- "Type I error"
+rm(moltExistSplitFeat)
+moltExist <- droplevels(moltExist)
+dfAll <- rbind(moltExistPaggTypeIerror, moltExistPaggPower)
+dfAll$what <- factor(dfAll$what, levels = c("Type I error", "FDR", "Power", "Sensitivity", "FDR_fdrtool", "Sensitivity_fdrtool"), ordered = TRUE)
+```
+
+```{r qqplotParSim, fig.cap = "QQ-plots of observed p-values (y-axis) versus standard uniform quantiles (x-axis) for parametric simulations under the two null scenarios (columns), for different methods (colour). The solid black line has slope 1 and intercept 0.\\label{fig:qqParSim}", fig.height = 9}
+id <- which(moltExist$spatPats %in% c("No spatial pattern", "Independent GPs"))
+ggplot(
+  data = moltExist[sample(id, length(id / 5)), ],
+  aes(sample = value, col = Method)
+) +
+  geom_qq(distribution = stats::qunif, size = 0.4) +
+  facet_grid(rows = vars(Method), cols = vars(spatPats)) +
+  ylab("Observed quantiles") +
+  xlab("Expected quantiles") +
+  xlim(c(0, 1)) +
+  ylim(c(0, 1)) +
+  geom_abline(slope = 1, intercept = 0, linewidth = 0.4) +
+  scale_color_manual(values = powerColours) +
+  theme(
+    strip.text.y = element_blank(), strip.text.x = element_text(size = 7.5),
+    legend.key.size = unit(1, "lines"),
+    axis.text = element_text(size = 7), legend.position = "right"
+  ) +
+  guides(colour = guide_legend(override.aes = list(size = 1.25)))
+rm(id)
+```
+
+```{r falsePosPearsonCor, fig.height = 4.75, fig.width = 8, fig.cap = "Type I error (y-axis) for different analysis methods (colour) as a function of whether there is no SAC, SAC in one or in both variables (x-axis), for outcomes generated as independent GPs. The horizontal dotted line indicates the significance level of 5\\%.\\label{fig:PearsonTypeIerror}"}
+namesTmp <- paste0("feat", featGridPower$i, "X__", "feat", featGridPower$j, "y")
+moltExistOldPear <- melt(lapply(jointRes, function(x) {
+  tmp <- t(sapply(x$Exist, function(y) y[, "pVal"]))
+  rownames(tmp) <- namesTmp
+  tmpNew <- x$New$pVal
+  list(old = tmp, new = tmpNew)
+}))
+colnames(moltExistOldPear) <- c("featurePair", "Method", "value", "foo", "rep")
+moltExistOldPear$value <- as.numeric(moltExistOldPear$value)
+moltExistSplitFeat <- simplify2array(strsplit(as.character(moltExistOldPear[, "featurePair"]), "__"))
+moltExistOldPear$TP <- grepl("TP", moltExistSplitFeat[1, ]) + grepl("TP", moltExistSplitFeat[2, ])
+moltExistOldPear <- cbind(moltExistOldPear[, c("value", "TP", "Method")], jointGrid[moltExistOldPear[, "rep"], ])
+moltExistOldPearAgg <- aggregate(moltExistOldPear,
+  value ~ spatPats + TP + Method,
+  FUN = getPower
+)
+moltExistOldPearAgg$TP <- factor(moltExistOldPearAgg$TP,
+  levels = 0:2,
+  labels = c("No SAC", "SAC in\none variable", "SAC in\nboth variables"), ordered = TRUE
+)
+moltExistOldPearAgg <- factorizeDf(moltExistOldPearAgg)
+ggplot(data = moltExistOldPearAgg[moltExistOldPearAgg$spatPats == "Independent GPs" & moltExistOldPearAgg$Method %in% methLabelsShow, ], aes(y = value, x = TP, col = Method)) +
+  facet_grid(cols = vars(spatPats), scale = "free_y") +
+  scale_colour_manual(values = powerColours) +
+  geom_hline(yintercept = sigLevel, linetype = "dotted") +
+  ylab("Type I error") +
+  geom_jitter(width = 0.36, size = 1) +
+  xlab("") +
+  theme(strip.text = element_text(size = 7.5), legend.position = "top", legend.text = element_text(size = 8)) +
+  guides(color = guide_legend(nrow = 4))
+```
+
+```{r rmStuff}
+rm(estVarsMolt, jointResNewMoran, jointRes, aggDf, estVars, indepVars, indepVarsMolt, moltExist, moltExistOldPear, moltExistOldPearAgg, moltExistPaggFdr, moltExistPaggFDR, moltExistPaggPower, moltExistPaggTypeIerror, moltExistSplitFeat, moltFdr, moltTim, moltTimAgg, newGrid, secondGrid, timingsGrid, trueVars, trueVarsMolt)
+```
+
+```{r disjointsim}
+if (!file.exists(disFile <- "Results/disJointRes.RData")) {
+  xMat <- makeCoordGrid(n, xMin, xMax)
+  yMat <- makeCoordGrid(m, xMin + 0.03, xMax + 0.03)
+  distMat <- as.matrix(stats::dist(rbind(xMat, yMat)))
+  idnn_XY <- nn2(yMat, xMat, k = 1)$nn.idx[, 1]
+  wm <- buildWeightMat(xMat, xMat, wo = "Gauss", eta = etaSim)
+  prepCzaplewski <- prepareCzaplewskiWeights(wm)
+  ns <- n / sum(wm)
+  fac2 <- (n / ((n - 1) * sum(wm)))^2
+  H <- diag(n) - 1 / n
+  IxyvarSpatialDMSqrt <- sqrt(fac2 * tr(crossprod(H %*% wm %*% H)))
+  listW <- mat2listw(wm, style = "M")
+  listWgeary <- listw2U(listW)
+  dgr <- as.matrix(spatialreg::as_dgRMatrix_listw(listWgeary))
+  idDgr <- which(dgr != 0)
+  wc <- spweights.constants(listWgeary, zero.policy = FALSE, adjust.n = TRUE)
+  xSeq <- seq(xMin, xMax, length.out = sqrt(n)) # Crossproduct as in code rather than square as in supplementary
+  tp <- ppp(xMat[, "x"], xMat[, "y"])
+  disjointRes <- mclapply(seq_len(nrow(jointGrid)), mc.cores = nCores, function(ii) {
+    spatPat <- jointGrid[ii, "spatPats"]
+    rep <- jointGrid[ii, "rep"]
+    dat <- makeXY(xMat, yMat, what = spatPat, distMat = distMat, nSims = nFeats * (1 - propFeatNull), nuggets = Nugs, ranges = Rangs, sigmas = Sigs)
+    datNull <- makeXY(xMat, yMat,
+      what = if (spatPat %in% c("dependentStreakGPs", "dependentZonesGPs")) "independentGPs" else "none",
+      distMat = distMat, nSims = nFeats * propFeatNull,
+      nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+    )
+    colnames(dat$x) <- paste0(colnames(dat$x), "_TPx")
+    colnames(dat$y) <- paste0(colnames(dat$y), "_TPy")
+    dat$x <- cbind(dat$x, datNull$x)
+    dat$y <- cbind(dat$y, datNull$y)
+    gpRes <- sbivar(dat$x, dat$y,
+      Cx = xMat,
+      Ey = yMat, method = "GP", verbose = FALSE
+    )$result[, "pVal"]
+    MoransI_sbivar <- sbivar(dat$x, Ey = yMat, dat$y, Cx = xMat, method = "Moran's I", verbose = FALSE)$result
+    splineRes <- sbivar(dat$x, dat$y, Cx = xMat, Ey = yMat, method = "GAMs", verbose = FALSE)$result
+    splineResGAMM <- sbivar(dat$x, dat$y, Cx = xMat, Ey = yMat, Gamm = TRUE, method = "GAMs", verbose = FALSE)$result
+    MoransI_permutation <- {
+      c(MoransIpermutation(dat$x, dat$y, xMat, yMat, nPerms = nPerms))
+    }
+    CCres <- {
+      c(CCtestEtas(dat$x, dat$y, xMat, yMat, nPerms))
+    }
+    namesMat <- sbivar:::makeNames(colnames(dat$x), colnames(dat$y))
+    names(MoransI_permutation) <- names(CCres) <- namesMat
+    pVals <- cbind(
+      "MoransI_sbivar" = MoransI[, "pVal"], "GAM" = splineRes[rownames(MoransI), "pVal"],
+      "GAMM" = splineResGAMM[rownames(MoransI), "pVal"], "modTtest" = modtTest[rownames(MoransI), "pVal"], "MoransI_RandomShift" = CCresMoranP[rownames(MoransI)]
+    )
+    # Match observations
+    dat$y <- dat$y[idnn_XY, ]
+    xScaled <- scale(dat$x, center = TRUE, scale = FALSE)
+    yScaled <- scale(dat$y, center = TRUE, scale = FALSE)
+    ResExist <- t(vapply(seq_len(nrow(featGrid)), FUN.VALUE = double(7), function(bb) {
+      i <- featGrid[bb, "i"]
+      j <- featGrid[bb, "j"]
+      ## Czaplewski
+      pValCza <- {
+        Ixy <- as.vector(dat$x[, i] %*% wm %*% dat$y[, j])
+        resCza <- getVarCzaplewski(dat$x[, i], dat$y[, j], prepCzaplewski)
+        makePval((Ixy - resCza["EIxy"]) / sqrt(resCza["varIxy"]))
+      }
+      ## SpatialDM
+      pValSpatialDM <- {
+        xCen <- xScaled[, i]
+        yCen <- yScaled[, j]
+        Ixynorm <- ns * as.vector(xCen %*% wm %*% yCen) / sqrt(sum(xCen^2) * sum(yCen^2))
+        makePval(Ixynorm / IxyvarSpatialDMSqrt) # Checked with python code
+      }
+      # SpaGene
+      spaGenePval <- SpaGene_LR(expr = rbind("x" = dat$x[, i], "y" = dat$y[, j]), location = xMat, LRpair = data.frame("x" = "x", "y" = "y"), normalize = FALSE, perm = nPerms)[["pval"]]
+      # Lee's L, using spdep
+      leeObj <- lee.test(dat$x[, i], dat$y[, j], listW)$p.value
+      # Geary's C
+      gearCperm <- {
+        obsGeary <- geary.bi.fast(dat$x[, i], dat$y[, j], wc, dgr)
+        outerMat <- outer(dat$x[, i], dat$y[, j], "-")^2
+        permGeary <- wc$n1 / wc$S0 * vapply(integer(nPerms), FUN.VALUE = obsGeary, function(jjj) {
+          sum(dgr[idDgr] * outerMat[sample(n), sample(n)][idDgr])
+        })
+        getPermPval(obsGeary, permGeary)
+      }
+      # Pearson correlation:
+      pearRes <- cor.test(dat$x[, i], dat$y[, j])$p.value
+      # Random shift test
+      CCres <- CCtestWrapper(x = dat$x[, i], y = dat$y[, j], xSeq = xSeq, ySeq = xSeq, tp = tp, N.shifts = nPerms)$p.value
+      c("MoransI_Czaplewski" = pValCza, "MoransI_SpatialDM" = pValSpatialDM, "SpaGene" = spaGenePval, "LeesL_asymptotic" = leeObj, "GearysC_permutation" = gearCperm, "PearsonCor" = pearRes, "RandomShift" = CCres)
+    }))
+    rownames(ResExist) <- namesTmp
+    modtTest <- sbivar(dat$x, dat$y, Cx = xMat, method = "Modif", verbose = FALSE)$result
+    rownames(modtTest) <- makeRowNames(modtTest)
+    out <- cbind(ResExist, "modTtest" = modtTest[namesTmp, "pVal"])
+    list("pVal" = cbind(pVals, out[rownames(pVals), ]))
+  })
+  save(disjointRes, file = disFile)
+} else {
+  load(disFile)
+}
+```
+
+```{r parNewResDis, include = FALSE}
+moltNewDis <- melt(lapply(disjointRes, function(x) x$pVal))
+colnames(moltNewDis) <- c("featurePair", "Method", "value", "rep")
+moltNewDis <- cbind(moltNewDis, jointGrid[moltNewDis[, "rep"], ])
+moltNewDis <- factorizeDf(moltNewDis)
+moltExistSplitFeat <- simplify2array(strsplit(as.character(moltNewDis$featurePair), "__"))
+moltExistSplitFeat[1, ] <- gsub("_", "", gsub("X", "", gsub("x", "", moltExistSplitFeat[1, ])))
+moltExistSplitFeat[2, ] <- gsub("_", "", gsub("Y", "", gsub("y", "", moltExistSplitFeat[2, ])))
+moltNewDis$TP <- ((moltNewDis$spatPats != "Dependent GPs") | (moltExistSplitFeat[1, ] == moltExistSplitFeat[2, ])) & grepl(
+  "TP",
+  moltExistSplitFeat[1, ]
+) & grepl("TP", moltExistSplitFeat[2, ]) & !(moltNewDis$spatPats %in% spatLabsNull)
+moltNewDisaggPower <- aggregate(moltNewDis[moltNewDis$TP, ], value ~ Method + spatPats, FUN = getPower)
+moltNewDisaggPower$what <- "Power"
+moltNewDisaggT1E <- aggregate(moltNewDis[!moltNewDis$TP, ], value ~ Method + spatPats, FUN = getPower)
+moltNewDisaggT1E$what <- "Type I error"
+moltNewDisPagg <- rbind(moltNewDisaggT1E, moltNewDisaggPower)
+moltNewDisPagg$what <- factor(moltNewDisPagg$what, levels = c("Type I error", "Power"), ordered = TRUE)
+dfAll$Coordinates <- "Joint"
+moltNewDisPagg$Coordinates <- "Disjoint"
+dfAll2 <- rbind(dfAll, moltNewDisPagg)
+dfAll2$Coordinates <- factor(dfAll2$Coordinates, levels = c("Joint", "Disjoint"), ordered = TRUE)
+pp <- ggplot(data = dfAll2[dfAll2$Method %in% methLabelsShow, ], aes(col = Method, y = value, x = Method, group = Method)) +
+  scale_colour_manual(values = powerColours) +
+  facet_nested(rows = vars(Coordinates, what), cols = vars(spatPats), scale = "free_y") +
+  geom_hline(yintercept = sigLevel, linetype = "dotted") +
+  ylab("Type I error/power") +
+  geom_point(size = 2) +
+  xlab("") +
+  ylim(c(0, 1)) +
+  theme(
+    strip.text = element_text(size = 9.1),
+    axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+    axis.text.y = element_text(size = 10.5),
+    axis.title.x = element_text(size = 13),
+    legend.text = element_text(size = 11),
+    legend.title = element_text(size = 13),
+    legend.position = "top"
+  ) +
+  guides(color = guide_legend(nrow = 4))
+ggsave(pp, file = "GraphsPaper/resAll.pdf", height = 8.25, width = 9.1)
+rm(moltExist, pp, dfAll2, moltNewDis)
+```
+
+```{r timingsN, fig.cap = "Runtimes (in seconds) (y-axis) for different methods that control type I error rate (colour) and increasing number of spots (x-axis) with joint coordinate sets in the 'No spatial pattern' scenario. Bivariate GPs and GAMMs were not run for the higher spot numbers.\\label{fig:timingsN}", fig.height = 3.25, fig.width = 6.5}
+dir.nw(timingsFolder <- "Results/timings/")
+samSizesJoint <- c(20^2, 25^2, 30^2, 35^2, 40^2, 45^2)
+timingsGrid <- expand.grid("samSize" = samSizesJoint, "rep" = seq_len(10))
+if (!file.exists(timingsNFile <- "Results/JointResNTimings.RData")) {
+  nSimsTime <- 10
+  register(SerialParam())
+  timingsN <- lapply(seq_len(nrow(timingsGrid)), function(i) {
+    if (!file.exists(timFile <- paste0(timingsFolder, "timing", i, ".RData"))) {
+      n <- timingsGrid[i, "samSize"]
+      rep <- timingsGrid[i, "rep"]
+      xMat <- makeCoordGrid(n, xMin, xMax)
+      dat <- makeXY(xMat, xMat, what = "none", nSims = nSimsTime)
+      MoransI_sbivar <- peakRAM(sbivar(dat$x, dat$y, Cx = xMat, method = "Moran's I", verbose = FALSE))
+      GAMs <- peakRAM(sbivar(dat$x, dat$y, Cx = xMat, method = "GAMs", verbose = FALSE))
+      GAMMs <- if (n <= samSizesJoint[2]) {
+        peakRAM(sbivar(dat$x, dat$y, Cx = xMat, method = "GAMs", Gamm = TRUE, verbose = FALSE))
+      } else {
+        rep(NA, 4)
+      }
+      GPs <- if (n <= samSizesJoint[3]) {
+        peakRAM(sbivar(dat$x, dat$y, Cx = xMat, method = "GPs", verbose = FALSE))
+      } else {
+        rep(NA, 4)
+      }
+      modTtest <- peakRAM(sbivar(dat$x, dat$y, Cx = xMat, method = "Modified", verbose = FALSE))
+      MoransI_RandomShift <- peakRAM(CCtestEtas(dat$x, dat$y, Cx = xMat, Ey = xMat, nPerms = 1e3, verbose = FALSE))
+      out <- t(rbind("MoransI_sbivar" = MoransI_sbivar[c(2, 4)], "GAM" = GAMs[c(2, 4)], "GAMM" = GAMMs[c(2, 4)], "GP" = GPs[c(2, 4)], "modTtest" = modTtest[c(2, 4)], "MoransI_RandomShift" = MoransI_RandomShift[c(2, 4)]))
+      save(out, file = timFile)
+    } else {
+      load(timFile)
+    }
+    out
+  })
+  save(timingsN, file = timingsNFile)
+} else {
+  load(timingsNFile)
+}
+moltTim <- melt(timingsN)
+colnames(moltTim) <- c("what", "Method", "value", "repl")
+moltTim$what <- factor(moltTim$what, levels = timeLevels, labels = timeLabels, ordered = TRUE)
+moltTim <- cbind(moltTim, timingsGrid[moltTim[, "repl"], ])
+moltTim$Method <- factor(moltTim$Method, levels = methLevels, labels = methLabels, ordered = TRUE)
+moltTimAgg <- aggregate(moltTim, value ~ Method + what + samSize, FUN = mean)
+ggplot(data = moltTimAgg[moltTimAgg$what == "Runtime (in seconds)", ], aes(x = samSize, y = value, col = Method)) +
+  geom_line() +
+  geom_point() +
+  scale_color_manual(values = powerColours) +
+  xlab("Number of spots") +
+  ylab("Runtimes (seconds)")
+rm(moltTim, moltTimAgg, timingsGrid, timingsN)
+```
+
+```{r jitterOutcomedistrs}
+if (!file.exists(xMatsFile <- "Results/xMats.RData")) {
+  xMats <- lapply(sampleNamesMouse, function(sam) {
+    visiumCoords <- read.csv(header = FALSE, paste0("Data/Vicari2024/Vicari2024_Magpie/input/", sam, "/visium/spatial/tissue_positions_list.csv"), col.names = c("barcode", "in_tissue", "array_row", "array_col", "x", "y"))
+    as.matrix(visiumCoords[visiumCoords$in_tissue == 1, c("x", "y")])
+  })
+  yMats <- lapply(sampleNamesMouse, function(sam) {
+    msiCoords <- read.csv(paste0(
+      "Data/Vicari2024/Vicari2024_Magpie/", sam,
+      "/spaceranger/spatial/tissue_positions_list.csv"
+    ), row.names = 1, header = FALSE)[, 1:3]
+    colnames(msiCoords) <- c("in_tissue", "x", "y")
+    as.matrix(msiCoords[msiCoords$in_tissue == 1, c("x", "y")])
+  })
+  save(xMats, yMats, sampleNamesMouse, file = xMatsFile)
+}
+jitterGrid <- expand.grid(stringsAsFactors = FALSE, "spatPats" = spatPatsShow, "rep" = seq_len(nSimsJitter), "sdJitter" = sdJitter, "sample" = sampleNamesMouse)
+NugsJitter <- c(0.85, 0.85)
+RangsJitter <- c(0.1, 0.1, 0.1)
+if (!file.exists(jitterFile <- "Results/jitterDistr.RData")) {
+  load(xMatsFile)
+  jitterRes <- lapply(seq_len(nrow(jitterGrid)), function(ii) {
+    spatPat <- jitterGrid[ii, "spatPats"]
+    rep <- jitterGrid[ii, "rep"]
+    sam <- jitterGrid[ii, "sample"]
+    sd <- jitterGrid[ii, "sdJitter"]
+    moved <- sbivar:::moveTwoCoords(xMats[[sam]], yMats[[sam]])
+    xMatGen <- moved$Cx
+    yMatGen <- moved$Ey
+    distMat <- as.matrix(stats::dist(rbind(xMatGen, yMatGen)))
+    dat <- makeXY(xMatGen, yMatGen,
+      what = spatPat, distMat = distMat, nSims = nFeats * (1 - propFeatNull),
+      nuggets = NugsJitter, ranges = RangsJitter, sigmas = Sigs, scaleZone = 0.01,
+      widthStreak = 0.05, boundsBetas = c(0.3, 0.5)
+    )
+    colnames(dat$x) <- paste0(colnames(dat$x), "_TPx")
+    colnames(dat$y) <- paste0(colnames(dat$y), "_TPy")
+    datNull <- makeXY(xMatGen, yMatGen,
+      what = if (spatPat %in% c("dependentStreakGPs", "dependentZonesGPs")) "independentGPs" else "none", distMat = distMat, nSims = nFeats * propFeatNull,
+      nuggets = NugsJitter, ranges = RangsJitter, sigmas = Sigs
+    )
+    dat$x <- cbind(dat$x, datNull$x)
+    dat$y <- cbind(dat$y, datNull$y)
+    rownames(dat$x) <- rownames(xMatGen)
+    rownames(dat$y) <- rownames(yMatGen)
+    if (sd == 0) {
+      xMat <- xMatGen
+      yMat <- yMatGen
+    } else {
+      yMat <- as.matrix(read.csv(paste0(lmFolder, "newCoords_rep", rep, "sd", sd, "sample", sam, ".csv"), header = FALSE)[, c(3, 4)])
+      dimnames(yMat) <- list(paste0("samY", seq_len(nrow(yMat))), c("x", "y"))
+      moved <- sbivar:::moveTwoCoords(xMats[[sam]], yMat)
+      xMat <- moved$Cx
+      yMat <- moved$Ey
+      dimnames(yMat) <- dimnames(yMatGen)
+    }
+    Moranres <- sbivar(dat$x, dat$y, xMat, yMat, method = "Moran", verbose = FALSE)$result
+    rownames(Moranres) <- paste0(Moranres[, "Modality_X"], "__", Moranres[, "Modality_Y"])
+    GAMres <- sbivar(dat$x, dat$y, xMat, yMat, method = "GAM", verbose = FALSE)$result
+    rownames(GAMres) <- paste0(GAMres[, "Modality_X"], "__", GAMres[, "Modality_Y"])
+    MoransI_permutation <- c(MoransIpermutation(dat$x, dat$y, xMat, yMat, nPerms = nPerms, verbose = FALSE))
+    CCres <- c(CCtestEtas(dat$x, dat$y, xMat, yMat, nPerms, verbose = FALSE))
+    names(MoransI_permutation) <- names(CCres) <- sbivar:::makeNames(colnames(dat$x), colnames(dat$y))
+    pVals <- cbind(
+      "MoransI_sbivar" = Moranres[, "pVal"],
+      "MoransI_permutation" = MoransI_permutation[rownames(Moranres)],
+      "GAM" = GAMres[rownames(Moranres), "pVal"],
+      "MoransI_RandomShift" = CCres[rownames(Moranres)]
+    )
+    pVals
+  })
+  save(jitterRes, file = jitterFile)
+} else {
+  load(jitterFile)
+}
+```
+
+```{r jitterProc, fig.cap = "Type I error (two left panels) and power (five right panels) (y-axis) averaged over all nine Vicari data template sections as a function of standard deviation by which the landmarks were jittered (x-axis) for different methods (colour), spatial patterns (columns). A standard deviation of 0 corresponds to an analysis using the true, unjittered coordinates.\\label{fig:jitter}", fig.height = 5, fig.width = 7}
+id <- which(sapply(jitterRes, is.matrix))
+jitterMolt <- do.call(what = rbind, lapply(
+  id, # seq_along(jitterRes),
+  function(i) {
+    tmp <- jitterRes[[i]]
+    TP <- if (jitterGrid$spatPats[[i]] %in% c("none", "independentGPs")) {
+      rep(FALSE, nrow(tmp))
+    } else if (jitterGrid$spatPats[[i]] == "dependentGPs") {
+      getSameNamesId(rownames(tmp), which = FALSE)
+    } else {
+      str_count(rownames(tmp), pattern = "TP") == 2
+    }
+    data.frame(
+      "pVal" = c(tmp), "Method" = rep(colnames(tmp), each = nrow(tmp)), "TP" = rep(TP, times = ncol(tmp)),
+      jitterGrid[i, -2, drop = FALSE], row.names = NULL
+    )
+  }
+))
+jitterMoltAgg <- aggregate(data = jitterMolt, x = pVal ~ Method + spatPats + sdJitter + TP, FUN = getPower)
+jitterMoltAgg <- factorizeDf(jitterMoltAgg)
+jitterMoltAgg$TP <- factor(jitterMoltAgg$TP, levels = c(FALSE, TRUE), labels = c("Type I error", "Power"), ordered = TRUE)
+ggplot(data = jitterMoltAgg, aes(y = pVal, x = sdJitter, col = Method)) +
+  facet_grid(TP ~ spatPats) +
+  geom_line() +
+  scale_colour_manual(values = powerColours) +
+  scale_x_continuous(breaks = sdJitter) +
+  geom_hline(yintercept = sigLevel, linetype = "dashed") +
+  guides(color = guide_legend(nrow = 2)) +
+  ylab("Type I error/power") +
+  xlab("Jitter standard deviation") +
+  theme(
+    legend.position = "top", strip.text.y = element_text(size = 7),
+    strip.text.x = element_text(size = 6.7), axis.text.x = element_text(size = 6.1)
+  ) +
+  scale_x_continuous(breaks = sdJitter, labels = c(0, 0.5, 1, 1.5, 2, 3))
+rm(jitterMolt, jitterMoltAgg, jitterRes, jitterGrid)
+```
+
+\clearpage
+
+#### Multi-image analysis
+
+```{r repSimSamSize}
+designDfRep <- data.frame("mouse" = indivMouse)
+formRep <- formula(~ (1 | mouse))
+repReps <- 50
+nSimsReps <- 15
+repGrid <- expand.grid("rep" = seq_len(repReps), "spatPat" = spatPatsShow, stringsAsFactors = FALSE)
+numZones <- 6
+if (!file.exists(repFileSS <- "Results/repSimStudySamSize.RData")) {
+  repSimsSamSize <- mclapply(seq_len(nrow(repGrid)), mc.cores = nCores, function(ii) {
+    w <- repGrid[ii, "spatPat"]
+    rep <- repGrid[ii, "rep"]
+    betas <- matrix(runif(2 * nSimsReps * (1 - propFeatNull), 0.5, 1), nSimsReps * (1 - propFeatNull), 2)
+    betaZones <- matrix(runif(numZones * nSimsReps * (1 - propFeatNull), 2, 2.5), nSimsReps * (1 - propFeatNull), numZones)
+    datList <- lapply(selfName(seq_len(9)), function(sn) {
+      n <- max(rnbinom(1, mu = sqrt(n), size = 5)^2, 1e2)
+      m <- max(rnbinom(1, mu = sqrt(m), size = 5)^2, n)
+      Cx <- makeCoordGrid(n, xMin, xMax)
+      Ey <- makeCoordGrid(m, xMin + 0.03, xMax + 0.03)
+      idnn_XY <- nn2(Cx, Ey, k = 1)$nn.idx[, 1]
+      distMat <- as.matrix(stats::dist(rbind(Cx, Ey)))
+      dat <- makeXY(Cx, Ey, what = w, distMat = distMat, nSims = nSimsReps * (1 - propFeatNull), nuggets = Nugs, ranges = Rangs, sigmas = Sigs, betas = betas, betaZonesX = betaZones)
+      datNull <- makeXY(Cx, Ey,
+        what = if (w %in% c("dependentStreakGPs", "dependentZonesGPs")) "independentGPs" else "none",
+        distMat = distMat, nSims = nSimsReps * propFeatNull, nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+      )
+      colnames(dat$x) <- paste0(colnames(dat$x), "_TPx")
+      colnames(dat$y) <- paste0(colnames(dat$y), "_TPy")
+      dat$x <- cbind(dat$x, datNull$x)
+      dat$y <- cbind(dat$y, datNull$y)
+      c(dat, list("Cx" = Cx, "Ey" = Ey, "idnn_XY" = idnn_XY))
+    })
+    Xl <- lapply(datList, function(x) x$x)
+    Yl <- lapply(datList, function(x) x$y)
+    Cxl <- lapply(datList, function(x) x$Cx)
+    Eyl <- lapply(datList, function(x) x$Ey)
+    MoransI_sbivar <- sbivar(
+      X = Xl, Y = Yl, Cx = Cxl, Ey = Eyl, findVariances = TRUE,
+      method = "Moran's I", verbose = FALSE
+    )
+    splineRes <- sbivar(
+      X = Xl, Y = Yl, Cx = Cxl, Ey = Eyl, findVariances = TRUE,
+      method = "GAMs", verbose = FALSE
+    )
+    corTest <- sbivar(
+      X = lapply(datList, function(x) x$x[x$idnn_XY, ]),
+      Y = Yl, method = "Correlation", verbose = FALSE
+    )
+    # Fit linear models
+    MoransI_raw <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      designDf = designDfRep, verbose = FALSE,
+      Formula = formRep, inverseWeigh = FALSE, scaleByMax = FALSE
+    ), designDf = designDfRep)
+    MoransI_weighted <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      designDf = designDfRep,
+      Formula = formRep, inverseWeigh = TRUE, scaleByMax = FALSE, verbose = FALSE
+    ), designDf = designDfRep)
+    MoransI_weighted_scaled <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      designDf = designDfRep,
+      Formula = formRep, inverseWeigh = TRUE, scaleByMax = TRUE, verbose = FALSE
+    ), designDf = designDfRep)
+    MoransI_scaled <- extractResultsMulti(fitLinModels(MoransI_sbivar,
+      designDf = designDfRep,
+      Formula = formRep, inverseWeigh = FALSE, scaleByMax = TRUE, verbose = FALSE
+    ), designDf = designDfRep)
+    GAM_raw <- extractResultsMulti(fitLinModels(splineRes,
+      designDf = designDfRep,
+      Formula = formRep, inverseWeigh = FALSE, verbose = FALSE
+    ), designDf = designDfRep)
+    GAM_weighted <- extractResultsMulti(fitLinModels(splineRes,
+      designDf = designDfRep,
+      Formula = formRep, inverseWeigh = TRUE, verbose = FALSE
+    ), designDf = designDfRep)
+    Cor_raw <- extractResultsMulti(fitLinModels(corTest,
+      designDf = designDfRep,
+      Formula = formRep, verbose = FALSE, inverseWeigh = FALSE
+    ), designDf = designDfRep)
+    outList <- lapply(list(
+      "MoransI_raw" = MoransI_raw, "MoransI_weighted" = MoransI_weighted,
+      "MoransI_weighted_scaled" = MoransI_weighted_scaled, "MoransI_scaled" = MoransI_scaled,
+      "GAM_raw" = GAM_raw, "GAM_weighted" = GAM_weighted, "Cor_raw" = Cor_raw
+    ), function(x) x$result$Intercept)
+    outList
+  })
+  save(repSimsSamSize, file = repFileSS)
+} else {
+  load(repFileSS)
+}
+```
+
+```{r procSepPlot, fig.cap = "Type I error and power (y-axis, rows) for different methods (colours) and different spatial patterns (columns) in multi-image parametric simulations, as a function of weighing scheme used in the linear model (x-axis).\\label{fig:repSims}", fig.height=4.5, fig.weight = 8}
+moltPowersSep <- melt(lapply(repSimsSamSize, function(x) lapply(x, function(y) data.frame("featurePair" = makeRowNames(y[, 1:2]), y[, "pVal"]))), id.vars = "featurePair")[, -2]
+names(moltPowersSep) <- c("featurePair", "value", "Method", "run")
+moltPowersSep <- cbind(moltPowersSep, repGrid[moltPowersSep[, "run"], ])
+moltPowersSep$what <- factor(((moltPowersSep$spatPat != "dependentGPs") | getSameNamesId(moltPowersSep$featurePair, which = FALSE)) & (str_count(moltPowersSep$featurePair, "TP") == 2) & !(moltPowersSep$spatPat %in% spatLabsNull), levels = c(TRUE, FALSE), labels = c("Power", "Type I error"))
+moltPowersSep$spatPat <- factor(moltPowersSep$spatPat, levels = spatPats, labels = spatPatsLabels, ordered = TRUE)
+moltPowersSep$Weight <- "Raw"
+moltPowersSep$Weight[grepl(x = moltPowersSep$Method, pattern = "scaled")] <- "Scaled"
+moltPowersSep$Weight[grepl(x = moltPowersSep$Method, pattern = "weighted")] <- "Weighted"
+moltPowersSep$Weight[grepl(x = moltPowersSep$Method, pattern = "weighted") & grepl(x = moltPowersSep$Method, pattern = "scaled")] <- "Scaled and weighted"
+moltPowersSep$Weight <- factor(moltPowersSep$Weight, levels = c("Raw", "Scaled", "Weighted", "Scaled and weighted"), ordered = TRUE)
+moltPowersSep$Method[grepl(x = moltPowersSep$Method, pattern = "Moran")] <- "MoransI_sbivar"
+moltPowersSep$Method[grepl(x = moltPowersSep$Method, pattern = "GAM")] <- "GAM"
+moltPowersSep$Method[grepl(x = moltPowersSep$Method, pattern = "Cor")] <- "PearsonCor"
+moltPowersSep$Method <- factor(moltPowersSep$Method, levels = methLevels, labels = methLabels, ordered = TRUE)
+ReplicateAgg <- aggregate(x = formula("value ~ Method + Weight + spatPat + what"), data = moltPowersSep, FUN = getPower)
+ggplot(data = ReplicateAgg[ReplicateAgg$Weight %in% c("Raw", "Scaled", "Weighted"), ], aes(col = Method, x = Weight, y = value)) +
+  facet_grid(cols = vars(spatPat), rows = vars(what)) +
+  geom_point() +
+  xlab("Weighing scheme") +
+  ylab("Power/Type I error") +
+  theme(axis.text.x = element_text(angle = 90), strip.text = element_text(size = 7), legend.position = "top") +
+  geom_hline(yintercept = sigLevel, linetype = "dotted") +
+  scale_colour_manual(values = powerColours)
+rm(moltPowersSep, repSimsSamSize)
+```
+
+```{r rmparsims}
+rm(
+  xMat, yMat, dfAll, dfAll2, disjointRes, featGrid, featGridPower, jointGrid, jointGridAltNull,
+  moltExistSplitFeat, moltNewDisaggPower, moltNewDisaggT1E, moltNewDisPagg, repGrid, ReplicateAgg, scrambleGodfreyGrid, scrambleVicariGrid
+)
+baa <- gc(verbose = FALSE)
+```
+
+```{r timingsRep}
+nSimsTime <- 2e1
+nRepsTime <- 10
+if (!file.exists(repFileTimings <- "Results/repSimStudyTimings.RData")) {
+  register(SerialParam())
+  repSimsTiming <- lapply(seq_len(nRepsTime), function(rep) {
+    cat(rep)
+    datList <- lapply(selfName(seq_len(9)), function(sn) {
+      n <- max(rnbinom(1, mu = sqrt(n), size = 5)^2, 1e2)
+      m <- max(rnbinom(1, mu = sqrt(m), size = 5)^2, n)
+      Cx <- makeCoordGrid(n, xMin, xMax)
+      Ey <- makeCoordGrid(m, xMin + 0.03, xMax + 0.03)
+      idnn_XY <- nn2(Cx, Ey, k = 1)$nn.idx[, 1]
+      distMat <- as.matrix(stats::dist(rbind(Cx, Ey)))
+      dat <- makeXY(Cx, Ey,
+        what = "none", nSims = nSimsTime, distMat = distMat,
+        nuggets = Nugs, ranges = Rangs, sigmas = Sigs
+      )
+      c(dat, list("Cx" = Cx, "Ey" = Ey, "idnn_XY" = idnn_XY))
+    })
+    Xl <- lapply(datList, function(x) x$x)
+    Yl <- lapply(datList, function(x) x$y)
+    Cxl <- lapply(datList, function(x) x$Cx)
+    Eyl <- lapply(datList, function(x) x$Ey)
+    MoransI_sbivar_raw <- system.time({
+      res <- sbivar(
+        X = Xl, Y = Yl, Cx = Cxl, Ey = Eyl, findVariances = FALSE, findMaxW = FALSE,
+        method = "Moran's I", verbose = FALSE
+      )
+      extractResultsMulti(fitLinModels(res,
+        designDf = designDfRep, verbose = FALSE,
+        Formula = formRep, inverseWeigh = FALSE, scaleByMax = FALSE
+      ), designDf = designDfRep)
+    })[3]
+    MoransI_sbivar_scaled <- system.time({
+      res <- sbivar(
+        X = Xl, Y = Yl, Cx = Cxl, Ey = Eyl, findVariances = FALSE, findMaxW = TRUE,
+        method = "Moran's I", verbose = FALSE
+      )
+      extractResultsMulti(fitLinModels(res,
+        designDf = designDfRep, verbose = FALSE,
+        Formula = formRep
+      ), designDf = designDfRep)
+    })[3]
+    MoransI_sbivar_weighted <- system.time({
+      res <- sbivar(
+        X = Xl, Y = Yl, Cx = Cxl, Ey = Eyl, findVariances = TRUE, findMaxW = TRUE,
+        method = "Moran's I", verbose = FALSE
+      )
+      extractResultsMulti(fitLinModels(res,
+        designDf = designDfRep, verbose = FALSE,
+        Formula = formRep, inverseWeigh = TRUE
+      ), designDf = designDfRep)
+    })[3]
+    splineRes_raw <- system.time({
+      res <- sbivar(
+        X = Xl, Y = Yl, Cx = Cxl, Ey = Eyl,
+        method = "GAMs", verbose = FALSE
+      )
+      extractResultsMulti(fitLinModels(res,
+        designDf = designDfRep, verbose = FALSE,
+        Formula = formRep
+      ), designDf = designDfRep)
+    })[3]
+    splineRes_weighted <- system.time({
+      res <- sbivar(
+        X = Xl, Y = Yl, Cx = Cxl, Ey = Eyl, findVariances = TRUE,
+        method = "GAMs", verbose = FALSE
+      )
+      extractResultsMulti(fitLinModels(res,
+        designDf = designDfRep, verbose = FALSE,
+        Formula = formRep, inverseWeigh = TRUE
+      ), designDf = designDfRep)
+    })[3]
+    corTest <- system.time({
+      res <- sbivar(
+        X = lapply(datList, function(x) x$x[x$idnn_XY, ]),
+        Y = Yl, method = "Correlation", verbose = FALSE
+      )
+      extractResultsMulti(fitLinModels(res,
+        designDf = designDfRep, verbose = FALSE,
+        Formula = formRep
+      ), designDf = designDfRep)
+    })[3]
+    c("MoransI_sbivar_raw" = MoransI_sbivar_raw, "MoransI_sbivar_scaled" = MoransI_sbivar_scaled, "MoransI_sbivar_weighted" = MoransI_sbivar_weighted, "GAM_raw" = splineRes_raw, "GAM_weighted" = splineRes_weighted, "PearsonCor" = corTest)
+  })
+  save(repSimsTiming, file = repFileTimings)
+} else {
+  load(repFileTimings)
+}
+```
+
+```{r plottimingsrep, fig.height = 3, fig.width = 5, fig.cap = "Average runtimes (in seconds) (y-axis) for different methods (colour) and scaling schemes (x-axis) applied to multiple images with disjoint coordinate sets in the 'No spatial pattern' scenario of parametric simulations over 10 Monte-carlo instances with 20 features per modality.\\label{fig:timingsRep}"}
+repSimsTiming <- do.call(what = rbind, lapply(seq_along(repSimsTiming), function(x) data.frame("Method" = c("MoransI_sbivar", "MoransI_sbivar", "MoransI_sbivar", "GAM", "GAM", "PearsonCor"), "Scaling" = c("Raw", "Scaled", "Weighted", "Raw", "Weighted", "Raw"), "time" = repSimsTiming[[x]], "repl" = x)))
+repSimsTiming$Method <- factor(repSimsTiming$Method, levels = methLevels, labels = methLabels, ordered = TRUE)
+repSimsTiming$group <- paste0(repSimsTiming$Method, repSimsTiming$Scaling)
+repSimsTimingAgg <- aggregate(repSimsTiming, time ~ Method + Scaling, FUN = mean)
+ggplot(data = repSimsTimingAgg, aes(col = Method, x = Scaling, y = time)) +
+  geom_point() +
+  scale_color_manual(values = powerColours) +
+  scale_y_log10() +
+  xlab("Method") +
+  ylab("Runtime (seconds)") +
+  theme(axis.text.x = element_text(angle = 90), strip.text = element_text(size = 7))
+rm(repSimsTimingAgg, repSimsTiming, repSimsTiming, designDfRep)
+```
+
+\fref{fig:repSims} shows type I error and power for different methods under replication, proving the added value of scaling the Moran's I statistic by its maximum absolute value, but suggesting that inverse weighting by variance is not a good strategy. \fref{fig:timingsRep} shows a timing comparison on an Intel Core i5-11400H 2.70GHz processor.
+
+\clearpage
+
+# Real datasets
+
+## Godfrey et al. (2025)
+
+The dataset by \textcite{Godfrey2025} contains seven sections from human lung and breast cancer tissue coprofiled using desorption electrospray ionisation mass spectrometry imaging (DESI-MSI) for metabolites, followed by H&E staining and finally Visium for transcripts. The data were pre-aligned the help of the H&E stain and spot-matched by aggregating the metabolomics data with a Gaussian weighting scheme. \fref{fig:GodfreyLibs} reveals that the library sizes and total ion counts exhibit spatial patterning across the sections.
+
+```{r LC3libsizes, fig.cap = "Log10 spot-wise sums (colour) of the different sections (rows) of the Godfrey data.\\label{fig:GodfreyLibs}", fig.height = 9}
+foo <- base::do.call(rbind, lapply(samplesGodfrey, function(x) {
+  dfStx <- data.frame(godfreyIdentified[[x]]$Coord, "log10_Library_size" = log10(rowSums(godfreyIdentified[[x]]$Stx)), what = "Transcriptomics")
+  dfMsi <- data.frame(godfreyIdentified[[x]]$Coord, "log10_Library_size" = log10(rowSums(godfreyIdentified[[x]]$Msi)), what = "Metabolomics")
+  df <- rbind(dfStx, dfMsi)
+  df$sample <- x
+  df
+}))
+foo$what <- factor(foo$what, levels = c("Transcriptomics", "Metabolomics"), ordered = TRUE)
+ggplot(data = foo, aes(x = x, y = y, col = log10_Library_size)) +
+  geom_point(size = 0.5, shape = 18) +
+  facet_grid(sample ~ what, space = "free", scales = "free") +
+  theme(strip.text = element_text(size = 6.7)) +
+  xlab("Coordinate 1") +
+  ylab("Coordinate 2") +
+  scale_colour_gradient(low = "yellow", high = "blue", name = "Log10(spot sum)") +
+  coord_fixed()
+FamiliesGodfrey <- list("X" = mgcv::nb(), "Y" = Gamma(lin = "log"))
+```
+
+### Single-image analysis
+
+```{r godfreyreal}
+if (!file.exists(realFitGodfreyRegFile <- "Results/realFitsGodfreyRegistered.RData")) {
+  realFitsGodfrey <- lapply(samplesGodfrey, function(sn) {
+    dat <- godfreyIdentified[[sn]]
+    Moranres <- sbivar(dat$Stx, dat$Msi, dat$Coord, method = "Moran", normX = "rel", normY = "rel")
+    GAMres <- sbivar(dat$Stx, dat$Msi, dat$Coord, families = FamiliesGodfrey, method = "GAM")
+    CorRes <- corTests(dat$Stx, dat$Msi, normX = "rel", normY = "rel")[, "pVal"]
+    list("MoransI_sbivar" = Moranres, "GAM" = GAMres, "PearsonCor" = CorRes)
+  })
+  save(realFitsGodfrey, file = realFitGodfreyRegFile)
+}
+if (!file.exists(realFitGodfreyRegFileSmall <- "Results/realFitsGodfreyRegisteredSmall.RData")) {
+  load(realFitGodfreyRegFile)
+  realFitsGodfrey <- lapply(realFitsGodfrey, function(x) {
+    list(
+      "MoransI_sbivar" = x$MoransI_sbivar$result[, c(7, 8), drop = FALSE],
+      "GAM" = x$GAM$result[, c("corxy", "pVal", "pAdj"), drop = FALSE],
+      "PearsonCor" = cbind("pAdj" = p.adjust(x$PearsonCor, method = "BH"))
+    )
+  })
+  save(realFitsGodfrey, file = realFitGodfreyRegFileSmall)
+} else {
+  load(realFitGodfreyRegFileSmall)
+}
+```
+
+\clearpage
+
+#### Comparison to authors' findings
+
+```{r foundByGambutnotoriginally, include = FALSE}
+godSize <- 0.5
+foundOnlyGam <- lapply(samplesGodfrey, function(sam) {
+  foundOriginal <- godfreyMetTable[godfreyMetTable$Sample == names(mappingSamples)[mappingSamples == sam], ]
+  originalPairs <- make.names(paste0(foundOriginal$Genes, "__", foundOriginal$MZmatched))
+  gamRes <- realFitsGodfrey[[sam]]$GAM
+  gamRes <- gamRes[gamRes[, "pAdj"] < sigLevel, , drop = FALSE]
+  newPairs <- setdiff(rownames(gamRes), originalPairs)
+  oldPairs <- setdiff(y = rownames(gamRes), originalPairs)
+  list("onlyGAM" = newPairs, "onlyOld" = oldPairs)
+})
+onlyGamTopPairs <- sapply(foundOnlyGam, function(x) x$onlyGAM[1])
+moranTT <- t(sapply(samplesGodfrey, function(sam) {
+  realFitsGodfrey[[sam]]$Moran[onlyGamTopPairs[sam], ]
+}))
+# Strong negative correlations for GAM
+# Weak or none for correlations
+id <- sapply(onlyGamTopPairs, is.character)
+pGod <- plotGodfreyAll(pairsGod <- simplify2array(onlyGamTopPairs[id]), size = 0.32, samples = samplesGodfrey[id], stripSizeX = 5.35, xLimShift = 0.055, axisLegendSizeX = 6.5, legendShift = -90)
+ggsave(pGod, file = "GraphsPaper/PairGodfrey.pdf", height = 8.5, width = 5)
+rm(onlyGamTopPairs, pGod, foundOnlyGam)
+foundOnlyGamPos <- lapply(samplesGodfrey, function(sam) {
+  foundOriginal <- godfreyMetTable[godfreyMetTable$Sample == names(mappingSamples)[mappingSamples == sam], ]
+  originalPairs <- make.names(paste0(foundOriginal$Genes, "__", foundOriginal$MZmatched))
+  gamRes <- realFitsGodfrey[[sam]]$GAM
+  setdiff(rownames(gamRes[(gamRes[, "pAdj"] < sigLevel) & (gamRes[, "corxy"] > 0), , drop = FALSE]), originalPairs)
+})
+onlyGamTopPairsPos <- sapply(foundOnlyGamPos, function(x) x[1])
+moranTTpos <- t(sapply(samplesGodfrey, function(sam) {
+  realFitsGodfrey[[sam]]$Moran[onlyGamTopPairsPos[sam], ]
+}))
+rm(foundOnlyGamPos)
+onlyGamTopPairsPos <- simplify2array(onlyGamTopPairsPos[sapply(onlyGamTopPairsPos, is.character)])
+```
+
+```{r gamposGod, fig.cap = paste("Pairs found most significantly positively correlated by GAMs in different sections of the Godfrey data (rows), but not detected in the original analysis.\\label{fig:gamsOnlyGodfreyPos}", pasteCA(rownames(moranTTpos)[moranTTpos[, "pAdj"]<sigLevel]), "were also found significant by bivariate Moran's I."), fig.height = 8.9}
+plotGodfreyAll(pairs = onlyGamTopPairsPos, size = 0.37, samples = names(onlyGamTopPairsPos), xLimShift = 0.04)
+topMetsPos <- getMets(onlyGamTopPairsPos)
+topMetsPosCom <- allMetsCommon[topMetsPos]
+```
+
+We can confirm all highest correlations discussed by the authors in the main text of their original publication. Differences in findings with the full supplementary results are shown in \fref{fig:GAMGodfrey} in the main text and \fref{fig:gamsOnlyGodfreyPos} here for findings only by our methods, and Figs \ref{fig:gamsOnlyOriginal}-\ref{fig:gamsOnlyOriginal2} for findings in the original analysis but not by our methods.
+
+```{r foundByGambutnotoriginallyPlot, fig.height = 5, fig.cap = "Pairs with highest correlation found in the original analysis, but not declared significant by bivariate Moran's I or GAMs.\\label{fig:gamsOnlyOriginal}"}
+foundOnlyOrig <- lapply(samplesGodfrey, function(sam) {
+  foundOriginal <- godfreyMetTable[godfreyMetTable$Sample == names(mappingSamples)[mappingSamples == sam], ]
+  originalPairs <- make.names(paste0(foundOriginal$Genes, "__", foundOriginal$MZmatched))
+  gamRes <- realFitsGodfrey[[sam]]$GAM
+  gamRes <- gamRes[(gamRes[, "pAdj"] > sigLevel), , drop = FALSE]
+  MoranNotFinds <- rownames(realFitsGodfrey[[sam]]$MoransI_sbivar)[realFitsGodfrey[[sam]]$MoransI_sbivar[, "pAdj"] > sigLevel]
+  intersect(originalPairs, intersect(MoranNotFinds, rownames(gamRes))) # highest original correlation
+})
+foundOnlyOrig <- foundOnlyOrig[sapply(foundOnlyOrig, length) > 0]
+onlyOrigTopPairs <- sapply(foundOnlyOrig, function(x) x[1])
+idOrig <- !is.na(onlyOrigTopPairs)
+plotGodfreyAll(pairs = gp1 <- simplify2array(onlyOrigTopPairs[idOrig]), size = godSize + 0.1, samples = samOrig <- names(onlyOrigTopPairs)[idOrig])
+resPear <- t(mapply(realFitsGodfrey[samOrig], gp1, FUN = function(x, y) x$Pearson[y, ]))
+# Not significant
+resGAM <- t(mapply(realFitsGodfrey[samOrig], gp1, FUN = function(x, y) x$GAM[y, ])) # Weak correlation and not significant
+ttt <- godfreyMetTable[(godfreyMetTable$MZmatched %in% getMets(gp1)) & (godfreyMetTable$Genes %in% getGenes(gp1)), ]
+```
+
+```{r foundByGambutnotoriginallyPlot2, fig.cap = "Pairs with second highest significant correlation found in the original analysis, but not declared significant by bivariate Moran's I or GAMs.\\label{fig:gamsOnlyOriginal2}", fig.height = 4.7}
+onlyOrigTopPairs2 <- sapply(foundOnlyOrig, function(x) x[2])
+idOrig <- !is.na(onlyOrigTopPairs2)
+gp1 <- onlyOrigTopPairs2[idOrig]
+plotGodfreyAll(pairs = gp1, size = godSize + 0.02, samples = names(gp1))
+```
+
+\clearpage
+
+#### New findings
+
+New findings by GAMs are shown in Figs \ref{fig:godfreySmallMoran}-\ref{fig:godfreyKLKs} and Table \ref{tab:klk}.
+
+```{r godFreySmallestMoran, fig.cap = "Gene and metabolite (columns) most significantly associated per section (rows) according to the bivariate Moran's I in the Godfrey data. Colours reflect abundance, scaled to 0-1 for legibility.\\label{fig:godfreySmallMoran}", fig.height = 8}
+smallestGodfrey <- lapply(realFitsGodfrey, function(yy) {
+  lapply(yy, function(zz) {
+    rownames(zz)[which.min(zz[, "pAdj"])]
+  })
+})
+plotGodfreyAll(moranTop <- sapply(smallestGodfrey, function(x) x$MoransI_sbivar), samples = names(smallestGodfrey), size = 0.3)
+gamTopPairs <- sapply(smallestGodfrey, function(x) x$GAM)
+gamTopPairs <- simplify2array(gamTopPairs[sapply(gamTopPairs, length) > 0])
+gamTopAccordingToMoran <- sapply(samplesGodfrey, function(x) {
+  realFitsGodfrey[[x]]$MoransI_sbivar[gamTopPairs[x], "pAdj"]
+})
+```
+
+```{r godFreySmallestGAM, fig.cap = paste0("Gene and metabolite (columns) most significant per section (rows) according to GAMs in the Godfrey data. The findings in ", pasteCA(names(gamTopAccordingToMoran)[gamTopAccordingToMoran<sigLevel]), " are also significant according to bivariate Moran's I. Colours reflect abundance, scaled to 0-1 for legibility.\\label{fig:godfreySmallGAM}"), fig.height = 8.2}
+plotGodfreyAll(gamTopPairs, samples = names(gamTopPairs), size = 0.37, xLimShift = 0.05)
+gamCommon <- allMetsCommon[getMets(gamTopPairs)]
+```
+
+```{r godFreySmallestGAMposKLK1, fig.cap = "Relative abundance of PI 34:1 and the kallikrein transcripts most strongly associated with it (columns) in samples of the Godfrey data (rows). Colours reflect abundance, scaled to 0-1 for legibility. See Table \\ref{tab:klk} for full results.\\label{fig:godfreyKLKs}", fig.height = 9.4}
+smallestGodfreyGAMpos <- sapply(realFitsGodfrey[names(gamTopPairs)], function(yy) {
+  rownames(yy$GAM)[yy$GAM[, "corxy"] > 0][1]
+})
+gamCommonPos <- allMetsCommon[getMets(smallestGodfreyGAMpos)]
+Sam <- "LC_091"
+KLKgenes <- paste0("KLK", 10:13)
+met <- getMets(smallestGodfreyGAMpos)[1] # "PI 34:1"
+dfFoo <- base::do.call(rbind, lapply(samplesGodfrey, function(Sam) {
+  data.frame("Sample" = Sam, base::do.call(rbind, c(
+    lapply(KLKgenes, function(x) {
+      if (x %in% colnames(godfreyIdentified[[Sam]]$Stx)) data.frame(godfreyIdentified[[Sam]]$Coord, "what" = x, "value" = scaleZeroOne(godfreyIdentified[[Sam]]$Stx[, x] / rowSums(godfreyIdentified[[Sam]]$Stx)))
+    }),
+    list(data.frame(godfreyIdentified[[Sam]]$Coord,
+      "what" = "PI 34:1",
+      "value" = scaleZeroOne(godfreyIdentified[[Sam]]$Msi[, met] / rowSums(godfreyIdentified[[Sam]]$Msi))
+    ))
+  )))
+}))
+ggplot(data = dfFoo, aes(x = x, y = y, col = value)) +
+  geom_point(size = 0.44, shape = 18) +
+  facet_grid(Sample ~ what, scales = "free", space = "free") +
+  xlab("Coordinate 1") +
+  ylab("Coordinate 2") +
+  scale_colour_gradient(high = "blue", low = "yellow", name = "Relative\nabundance") +
+  coord_fixed() +
+  theme(
+    axis.text.x = element_text(angle = 90), legend.title = element_text(size = 7.5),
+    legend.position = "top", strip.text = element_text(size = 7)
+  )
+rm(dfFoo)
+```
+
+```{r klks, results = "asis"}
+klkGAMs <- base::do.call(rbind, lapply(samplesGodfrey, function(yy) {
+  tmp <- intersect(rownames(realFitsGodfrey[[yy]]$GAM), paste0(KLKgenes, "__", met))
+  baa <- realFitsGodfrey[[yy]]$GAM[tmp, ]
+  colnames(baa)[1:3] <- c("Correlation", "P.value", "Adjusted.P.value")
+  if (length(tmp)) data.frame("Sample" = yy, "Gene" = getGenes(tmp), baa[, c("Correlation", "Adjusted.P.value")])
+}))
+print.xtable(comment = FALSE, xtable(klkGAMs[klkGAMs[, "Adjusted.P.value"] < sigLevel, ], caption = "\\label{tab:klk}Significant correlations of \\textit{KLK} genes with PI 34:1 estimated by GAMs with adjusted p-values for all Godfrey samples. Only KLK10 in BC\\_515\\_Section\\_1 and KLK13 in LC\\_091 are also significant according to bivariate Moran's I.", display = c("s", "s", "s", "f", "e")), include.rownames = FALSE)
+klkMorans <- base::do.call(rbind, lapply(samplesGodfrey, function(yy) {
+  tmp <- intersect(rownames(realFitsGodfrey[[yy]]$Moran), paste0(KLKgenes, "__", met))
+  data.frame("Sample" = yy, realFitsGodfrey[[yy]]$Moran[tmp, ])
+}))
+foo <- klkMorans[klkMorans[, "pAdj"] < sigLevel, ]
+rm(klkGAMs, klkMorans, foo)
+```
+
+```{r godfreycancermasks, fig.cap = "Godfrey data sections (rows) coloured by pathologists' annotation of the spots.\\label{fig:GodfreyPatho}", fig.height = 9}
+foo <- base::do.call(rbind, lapply(samplesGodfrey, function(x) {
+  df <- data.frame(godfreyIdentified[[x]]$Coord, "Annotation" = godfreyIdentified[[x]]$Annot)
+  df$sample <- x
+  df
+}))
+ggplot(data = foo, aes(x = x, y = y, col = Annotation)) +
+  geom_point(size = 0.55, shape = 18) +
+  facet_grid(sample ~ ., scales = "free", space = "free") +
+  theme(strip.text = element_text(size = 8), axis.title = element_text(size = 9)) +
+  xlab("Coordinate 1") +
+  ylab("Coordinate 2") +
+  coord_fixed() +
+  guides(colour = guide_legend(override.aes = list(size = 1.25)))
+rm(foo)
+```
+
+```{r rmgodfreyreal}
+rm(godfreyIdentified, realFitsGodfrey)
+```
+
+\clearpage
+
+### Multi-image analysis
+
+In the original publication, the authors also look at which correlations are high in replicate sections of the same cancer type. They identify high correlations between *MUC1* and a series of phospholipids \parencite{Godfrey2025}, but these are not significant after multiplicity correction in our analysis with GAMs (\fref{fig:pvalHistGodfreyMulti}).
+
+```{r godHists, fig.cap = "Histograms of p-values of GAMs of a replicated analysis per cancer type (plot titles) for the Godfrey data.\\label{fig:pvalHistGodfreyMulti}", fig.height = 4}
+GodfreyGroups <- selfName(c("BC", "LC"))
+GodfreyMethods <- selfName(c("GAM", "MoransI_sbivar"))
+if (!file.exists(godMulfile <- "Results/godfreyMulti.RData")) {
+  godMulti <- lapply(GodfreyGroups, function(gr) {
+    id <- grep(gr, samplesGodfrey)
+    unPairsTab <- table(unlist(lapply(realFitsGodfrey[id], function(x) {
+      rownames(x[["GAM"]])
+    })))
+    unPairs <- names(unPairsTab[unPairsTab >= 2])
+    out <- vapply(unPairs, FUN.VALUE = 0, function(up) {
+      t.test(vapply(realFitsGodfrey[id], FUN.VALUE = 0, function(x) {
+        if (up %in% rownames(x[["GAM"]])) x[["GAM"]][up, "corxy"] else NA
+      }))$p.value
+    })
+  })
+  save(godMulti, file = godMulfile)
+} else {
+  load(godMulfile)
+}
+pAdjGodMult <- lapply(godMulti, function(x) sort(p.adjust(x, method = "BH")))
+par(mfrow = c(1, 2))
+foo <- lapply(GodfreyGroups, function(x) {
+  hist(godMulti[[x]], xlab = "P-value", main = switch(x,
+    "BC" = "Breast cancer",
+    "LC" = "Lung cancer"
+  ))
+})
+par(mfrow = c(1, 1))
+rm(godMulti, pAdjGodMult, foo, godfreyMetTable, smallestGodfrey)
+```
+
+## Vicari et al. (2024)
+
+This is a dataset on spatial transcriptomics and metabolomics on the same tissue sections from mouse and human brain \parencite{Vicari2024}. Here we focus on the three mice were measured in triplicate. The first two triplets of mouse sections (V11L12-038 and V11L12-109) are from the striatum, the third (V11T16-085) is from the substantia nigra. The mice's brains were lesioned on one side through 6-hydroxydopamine (6-OHDA) injection to emulate Parkinson's disease. The authors aligned the images manually using the location information of the non-empty samples only with *STUtility* \parencite{Bergenstrahle2020}, but we used the *MAGPIE* package \parencite{Williams2026} to guide manual alignment using anchor points (available in supplementary material), the resulting alignment is shown in \fref{fig:magpieVicari}. The spatial distributions of the spot-wise sums (library sizes and total ion counts) are shown in \fref{fig:libSizeVicari}, revealing spatial patterns for them.
+
+```{r loadWangjunMagpie, fig.cap = "Images from \\textcite{Vicari2024} aligned using \\textit{MAGPIE}. Metabolic spots are black, transcriptomic ones are blue. \\label{fig:magpieVicari}", fig.height = 12, fig.width = 10}
+par(mfrow = c(5, 2), mar = c(4, 4, 3, 3))
+foo <- lapply(sampleNamesMouse, function(x) {
+  plotxy(pch = "+", magpieCoords[[x]]$Msi, magpieCoords[[x]]$Stx, main = x, cex = 0.5)
+})
+par(mfrow = c(1, 1))
+```
+
+```{r plotLibSize, fig.cap = "Spatial distribution of spot-wise sums (library sizes and total ion counts) from the transcriptomics respectively metabolomics modalities (columns) of the Vicari2024 data, for different sections (rows). All spot sums have been scaled to the [0,1] range per modality and omics type for legibility.\\label{fig:libSizeVicari}", fig.height = 8.8, fig.width = 6, dpi = 100}
+foo <- base::do.call(rbind, lapply(sampleNamesMouse, function(x) {
+  data.frame(magpieCoords[[x]]$Stx,
+    libSize = scaleZeroOne(rowSums(exprObjs[[x]])), what = "Transcriptomics",
+    sample = x, image = x, replicate = 1 + which(x == sampleNamesMouse) %% 3
+  )
+}))
+fooMet <- base::do.call(rbind, lapply(sampleNamesMouse, function(x) {
+  data.frame(magpieCoords[[x]]$Msi,
+    libSize = scaleZeroOne(rowSums(msiObjs[[x]])), what = "Metabolomics",
+    sample = x, image = x, replicate = 1 + which(x == sampleNamesMouse) %% 3
+  )
+}))
+fooAll <- rbind(foo, fooMet)
+fooAll$what <- factor(fooAll$what, levels = c("Transcriptomics", "Metabolomics"), ordered = TRUE)
+ggplot(data = fooAll, aes(x = x, y = y, col = libSize)) +
+  geom_point(shape = 18, size = 0.175) +
+  facet_grid(image ~ what) +
+  theme(
+    axis.text = element_text(size = 6), axis.text.x = element_text(angle = 90),
+    strip.text = element_text(size = 6), axis.legend = element_text(size = 6)
+  ) +
+  scale_colour_gradient(low = "yellow", high = "blue", name = "Spot sums") +
+  coord_fixed() +
+  xlab("Coordinate 1") +
+  ylab("Coordinate 2")
+rm(foo, fooMet, fooAll)
+```
+
+\clearpage
+
+### Single-image analysis
+
+#### Comparison to authors' findings
+
+In the original publication the authors used nearest neighbour distances to find a one-to-one mapping between metabolic and transcriptomic samples, for which then Pearson correlation is calculated \parencite{Vicari2024}. The investigation focused on the metabolite dopamine, for which positive and negative correlations with a number of genes were found, but some were not confirmed by our analysis based on bivariate Moran's I or GAMs (\fref{fig:vicariNotConfirmedStria}-\ref{fig:vicariNotConfirmedSN}). We noticed that bivariate Moran's I and GAMs are complementary, as the former struggles with heteroskedasticity, whereas the latter with sharp hotspots and edge effects.
+
+```{r moransICons}
+SubstantiaNigraGenes <- selfName(c("Th", "Slc6a3", "Slc18a2", "Ddc", "Dlk1", "Ret", "Slc10a4", "Snca", "Pvalb"))
+StriataGenes <- selfName(c("Pcp4", "Tac1", "Hpca", "mt.Nd3", "Camkk2", "Camk2n1", "Atp2b1", "Penk", "Cartpt"))
+numFeatsVicariReal <- 1e3
+if (!file.exists(moranVicariFile <- "Results/VicariRes.RData")) {
+  allResVicari <- lapply(sampleNamesMouse, function(sn) {
+    yFeats <- intersect(unMetsIdentified, colnames(msiObjs[[sn]]))
+    MsiDat <- normMat(msiObjs[[sn]], norm = "rel")[, yFeats]
+    GAMres <- sbivar(as.matrix(exprObjs[[sn]]), msiObjs[[sn]], magpieCoords[[sn]]$Stx,
+      magpieCoords[[sn]]$Msi,
+      families = FamiliesVicari, method = "GAM", featuresY = yFeats
+    )
+    MoranRandomShift <- CCtestEtas(as.matrix(exprObjs[[sn]]), MsiDat, magpieCoords[[sn]]$Stx,
+      normY = "none",
+      magpieCoords[[sn]]$Msi, nPerms = nPerms, normX = "rel"
+    )
+    MoranResPerm <- MoransIpermutation(as.matrix(exprObjs[[sn]]), MsiDat, magpieCoords[[sn]]$Stx,
+      magpieCoords[[sn]]$Msi,
+      nPerms = nPerms, normX = "rel", normY = "none"
+    )
+    Moranres <- sbivar(as.matrix(exprObjs[[sn]]), msiObjs[[sn]], magpieCoords[[sn]]$Stx,
+      featuresY = yFeats,
+      magpieCoords[[sn]]$Msi, method = "Moran", normX = "rel", normY = "rel"
+    )
+    list(
+      "MoransI_sbivar" = Moranres, "GAM" = GAMres,
+      "MoranResPerm" = MoranResPerm, "MoranRandomShift" = MoranRandomShift
+    )
+  })
+  save(allResVicari, file = moranVicariFile)
+} else {
+  load(moranVicariFile)
+}
+```
+
+```{r compareToAuthorfindings}
+Metab <- c("Dopamine" = "X674.2805")
+SNsamples <- grep("V11T16-085", value = TRUE, sampleNamesMouse)
+Striasamples <- grep("V11T16-085", value = TRUE, sampleNamesMouse, invert = TRUE)
+GAMresDop <- sapply(allResVicari[Striasamples], function(xx) {
+  Nam <- rownames(xx$GAM$result)
+  baa <- sapply(StriataGenes, function(gene) {
+    tmp <- xx$GAM$result$pVal[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam)]
+    if (length(tmp)) tmp else NA
+  })
+  baa
+})
+MoranresDop <- sapply(allResVicari[Striasamples], function(xx) {
+  Nam <- rownames(xx$MoransI_sbivar$result)
+  baa <- sapply(StriataGenes, function(gene) {
+    tmp <- xx$MoransI_sbivar$result[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam), "pVal"]
+    if (length(tmp)) tmp else NA
+  })
+  baa
+})
+unconfirmedStriata <- intersect(rownames(GAMresDop)[apply(GAMresDop, 1, allNotSignif)], rownames(MoranresDop)[apply(MoranresDop, 1, allNotSignif)])
+```
+
+```{r normStuff}
+exprObjsNorm <- lapply(exprObjs, function(x) normMat(x, "rel"))
+rm(exprObjs)
+msiObjsNorm <- lapply(msiObjs, normMat, "rel")
+rm(GAMresDop, msiObjs)
+foo <- gc()
+```
+
+```{r plotStria, fig.cap = "Genes (all but last row) found by the authors to be associated to dopamine (last row), but not significant for bivariate Moran's I or GAMs, in different sections of the striatum of the Vicari data where dopamine was detected (columns).\\label{fig:vicariNotConfirmedStria}", fig.height = 8.5}
+plotVicariGenesMets(samples = grep("V11L12-038", Striasamples, invert = TRUE, value = TRUE), size = 0.54, mets = Metab, genes = unconfirmedStriata)
+```
+
+```{r plotSubstNigra, fig.cap = "Genes (all but last row) for which both bivariate Moran's I and GAMs find a different association to dopamine (last row) than the authors, in different substantia nigra sections of the Vicari data (columns). \\textit{Snca} was found positively associated by the authors but negatively associated or not significant by \\sbivar. \\textit{Pvalb} was found negatively associated by the authors but positively associated or not significant by \\sbivar. \\label{fig:vicariNotConfirmedSN}", fig.height = 8.5}
+GAMresDopSN <- sapply(allResVicari[SNsamples], function(xx) {
+  Nam <- rownames(xx$GAM$result)
+  sapply(SubstantiaNigraGenes, function(gene) {
+    tmp <- xx$GAM$result$pVal[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam)]
+    if (length(tmp)) unname(tmp) else NA # [tmp<sigLevel]
+  })
+})
+GAMresDopSNcor <- sapply(allResVicari[SNsamples], function(xx) {
+  Nam <- rownames(xx$GAM$result)
+  sapply(SubstantiaNigraGenes, function(gene) {
+    tmp <- xx$GAM$result$corxy[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam)]
+    if (length(tmp)) unname(tmp) else NA # [tmp<sigLevel]
+  })
+})
+MoranresDopSN <- sapply(allResVicari[SNsamples], function(xx) {
+  Nam <- rownames(xx$MoransI_sbivar$result)
+  sapply(SubstantiaNigraGenes, function(gene) {
+    tmp <- xx$MoransI_sbivar$result[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam), "pVal"]
+    if (length(tmp)) unname(tmp) else NA # [tmp<sigLevel]
+  })
+})
+unconfirmedSN <- rownames(GAMresDopSN)[(apply(GAMresDopSN, 1, allNotSignif) & apply(MoranresDopSN, 1, allNotSignif)) | apply(GAMresDopSNcor, 1, function(x) all(x < 0, na.rm = TRUE))]
+# Pvalb was found negatively associated
+plotVicariGenesMets(samples = SNsamples, size = 0.43, mets = Metab, genes = unconfirmedSN)
+rm(GAMresDopSN, unconfirmedSN, MoranresDopSN, GAMresDopSNcor)
+```
+
+```{r vicariMultiChunk}
+vicariGroups <- selfName(c("Stria", "SN"))
+if (!file.exists(realFitVicariMultiFile <- "Results/realFitsVicariMulti.RData")) {
+  vicariMulti <- lapply(vicariGroups, function(x) {
+    samples <- if (x == "Stria") Striasamples else SNsamples
+    unPairsTab <- table(unlist(lapply(allResVicari[samples], function(x) {
+      rownames(x[["GAM"]]$result)
+    })))
+    unPairs <- selfName(names(unPairsTab[unPairsTab >= 2]))
+    out <- loadBalanceBplapply(unPairs, function(up) {
+      gamCors <- vapply(allResVicari[samples], FUN.VALUE = 0, function(x) {
+        if (up %in% rownames(x[["GAM"]]$result)) x[["GAM"]]$result[up, "corxy"] else NA
+      })
+      id <- !is.na(gamCors)
+      fitGAM <- try(summary(lm(gamCors[id] ~ indivMouse[names(gamCors)[id]]))$coef["(Intercept)", c("Estimate", "Pr(>|t|)")], silent = TRUE)
+      if (inherits(fitGAM, "try-error")) {
+        fitGAM <- try(summary(lm(gamCors[id] ~ 1))$coef["(Intercept)", c("Estimate", "Pr(>|t|)")])
+      }
+      fitGAM
+    })
+    gamRes <- simplify2array(out[sapply(out, is.vector)])
+    unPairsTabMoran <- table(unlist(lapply(allResVicari[samples], function(x) {
+      rownames(x[["MoransI_sbivar"]]$result)
+    })))
+    unPairsMoran <- selfName(names(unPairsTabMoran[unPairsTabMoran >= 2]))
+    outMoran <- loadBalanceBplapply(unPairsMoran, function(up) {
+      Ixys <- vapply(allResVicari[samples], FUN.VALUE = double(3), function(x) {
+        if (up %in% rownames(x[["MoransI_sbivar"]]$result)) x[["MoransI_sbivar"]]$result[up, 1:3] else rep(NA, 3)
+      })
+      apply(Ixys, 1, function(y) {
+        id <- !is.na(y)
+        fitMoran <- try(summary(lm(y[id] ~ indivMouse[names(gamCors)[id]]))$coef["(Intercept)", c("Estimate", "Pr(>|t|)")], silent = TRUE)
+        if (inherits(fitMoran, "try-error")) {
+          fitMoran <- try(summary(lm(y[id] ~ 1))$coef["(Intercept)", c("Estimate", "Pr(>|t|)")])
+        }
+        fitMoran
+      })
+    })
+    list("GAM" = gamRes, "MoransI_sbivar" = outMoran)
+  })
+  save(vicariMulti, file = realFitVicariMultiFile)
+} else {
+  load(realFitVicariMultiFile)
+}
+vicariMulti2 <- lapply(vicariMulti, function(x) {
+  rownames(x$GAM)[2] <- "pVal"
+  x$GAM <- t(rbind(x$GAM, "pAdj" = p.adjust(x$GAM["pVal", ], method = "BH"), "qVal" = fdrtoolQval(x$GAM["pVal", ])))[order(x$GAM["pVal", ]), ]
+  moransI <- simplify2array(x$MoransI_sbivar)
+  cauchyP <- apply(moransI["Pr(>|t|)", , ], 2, sbivar:::CCT)
+  x$MoransI_sbivar <- cbind(t(moransI["Estimate", , ]), "pVal" = cauchyP, "pAdj" = p.adjust(cauchyP, method = "BH"))[order(cauchyP), ]
+  x
+})
+rm(vicariMulti)
+foo <- gc()
+pValsAdjVicari <- lapply(allResVicari, function(x) {
+  pvalsAdjGAMMoran <- lapply(x[c("GAM", "MoransI_sbivar")], function(y) {
+    tmp <- y$result[, "pAdj"]
+    names(tmp) <- rownames(y$result)
+    tmp
+  })
+  names(pvalsAdjGAMMoran)[2] <- "Moran's I\nsbivar"
+  qvalsAdjOther <- lapply(x[c("MoranResPerm", "MoranRandomShift")], fdrtoolQval)
+  names(qvalsAdjOther) <- c("Moran's I\npermutation", "Moran's I\nRandom shift")
+  c(pvalsAdjGAMMoran, qvalsAdjOther)
+})
+smallestVicariNeg <- simplify2array(Filter(f = is.character, lapply(allResVicari, function(yy) {
+  zz <- yy$GAM$result[yy$GAM$result[, "corxy"] < 0, , drop = FALSE]
+  if (any(zz[, "pAdj"] < sigLevel, na.rm = TRUE)) {
+    rownames(zz)[which.min(zz[, "pAdj"])]
+  }
+})))
+smallestVicariNegMoran <- t(sapply(names(smallestVicariNeg), function(yy) {
+  allResVicari[[yy]]$MoransI_sbivar$result[smallestVicariNeg[[yy]], , drop = FALSE]
+}))
+smalVicGAMPos <- simplify2array(Filter(f = is.character, lapply(allResVicari, function(yy) {
+  zz <- yy$GAM$result[yy$GAM$result[, "corxy"] > 0, ]
+  if (any(zz[, "pAdj"] < sigLevel, na.rm = TRUE)) {
+    rownames(zz)[which.min(zz[, "pAdj"])]
+  }
+})))
+smallestVicariPosMoran <- t(sapply(names(smalVicGAMPos), function(yy) {
+  allResVicari[[yy]]$MoransI_sbivar$result[smalVicGAMPos[[yy]], , drop = FALSE]
+}))
+nor <- base::do.call(rbind, Filter(f = is.data.frame, lapply(SNsamples, function(sn) {
+  tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result), "Ier5__X690.27454")
+  baa <- allResVicari[[sn]]$GAM$result[tmp, , drop = FALSE]
+  colnames(baa)[c(3, 5)] <- c("Correlation", "P.value")
+  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "P.value"), drop = FALSE])
+})))
+csrp1 <- base::do.call(rbind, lapply(sampleNamesMouse, function(sn) {
+  tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result), "Csrp1__X400.342015")
+  baa <- allResVicari[[sn]]$GAM$result[tmp, , drop = FALSE]
+  colnames(baa)[c(3, 5)] <- c("Correlation", "P.value")
+  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "P.value"), drop = FALSE])
+}))
+sparc <- base::do.call(rbind, lapply(sampleNamesMouse, function(sn) {
+  tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result), "Sparc__X698.49196")
+  baa <- allResVicari[[sn]]$GAM$result[tmp, , drop = FALSE]
+  colnames(baa)[c(3, 5)] <- c("Correlation", "P.value")
+  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "P.value"), drop = FALSE])
+}))
+moranCSRp1 <- sapply(sampleNamesMouse, function(yy) {
+  tmp <- intersect(rownames(allResVicari[[yy]]$GAM$result), "Csrp1__X400.342015")
+  allResVicari[[yy]]$MoransI_sbivar$result[tmp, ]
+})
+moranier5 <- base::do.call(rbind, lapply(sampleNamesMouse, function(yy) {
+  tmp <- intersect(rownames(allResVicari[[yy]]$GAM$result), "Ier5__X690.27454")
+  allResVicari[[yy]]$MoransI_sbivar$result[tmp, ]
+}))
+smallestVicari <- lapply(pValsAdjVicari, function(yy) {
+  lapply(yy, function(zz) {
+    if (min(zz, na.rm = TRUE) < sigLevel) {
+      names(zz)[which.min(zz)]
+    }
+  })
+})
+smallMoranVic <- sapply(smallestVicari, function(x) x[["Moran's I\nsbivar"]])
+snFindings <- lapply(SNsamples, function(sn) {
+  rownames(allResVicari[[sn]]$GAM$result)[allResVicari[[sn]]$GAM$result[, "pAdj"] < sigLevel & allResVicari[[sn]]$GAM$result[, "corxy"] > 0]
+})
+rm(allResVicari)
+fooo <- gc()
+```
+
+```{r moranallpaper, include = FALSE}
+p <- plotVicariAll(smalVicGAMPos, samples = names(smalVicGAMPos), axisLegendSize = 8.5, legendShift = 8, size = 0.82, stripTextSizeX = 7.8)
+ggsave(p, file = "GraphsPaper/PairVicari.pdf", height = 11.5)
+gc()
+```
+
+\clearpage
+
+#### New findings
+
+The most significant findings are shown in \ref{fig:GAMsVicariNeg}-\ref{fig:MoransIVicari}. The biologically interesting association between \textit{Cspr1} and palmitoyl-L-carnitine is shown in Figure \ref{fig:csrp1Palmitoyl}.
+
+```{r plotGAMAll, fig.cap = "Gene-metabolite pairs with most significant negative correlation according to GAMs in all sections of the Vicari data that have significant negative correlations. None of these findings are significant according to bivariate Moran's I. \\label{fig:GAMsVicariNeg}", fig.height = 8.9}
+plotVicariAll(smallestVicariNeg, samples = names(smallestVicariNeg))
+rm(smallestVicariNeg)
+```
+
+```{r plotMoranAll, fig.cap = "Gene-metabolite pairs most significant according to Moran's I in all sections of the Vicari data. Bivariate Moran's I captures many very short-range associations of genes with metabolite hotspots, but this may also indicate lack of robustness to heteroskedasticity.\\label{fig:MoransIVicari}", fig.height = 8.8}
+plotVicariAll(simplify2array(smallMoranVic[sapply(smallMoranVic, is.character)]), samples = names(smallMoranVic), axisLegendSize = 7, stripTextSizeX = 5.4, size = 0.25, xLimShift = 0, legendShift = -160)
+rm(smallMoranVic, pValsAdjVicari)
+```
+
+\clearpage
+
+```{r plotcsrp1Palmitoyl, fig.cap = paste0("\\textit{Csrp1} transcript and palmitoyl-L-carnitine in striatum samples of the Vicari data (rows). This metabolite is only present in these two sections, where it is highly positively associated with Csrp1, with GAM correlation estimates ", signif(csrp1["V11L12-038_A1", "Correlation"], 3) ," and ",signif(csrp1["V11L12-038_B1", "Correlation"], 3) ," and corresponding p-values ", signif(csrp1["V11L12-038_A1", "P.value"], 2)," and ", signif(csrp1["V11L12-038_B1", "P.value"], 2) ," in samples V11L12-038\\_A1 and V11L12-038\\_B1, respectively. The associations are also significant according to bivariate Moran's I.\\label{fig:csrp1Palmitoyl}"), fig.height = 4}
+plotVicariSingle("Csrp1", "X400.342015", samples = sampleNamesMouse[1:2], size = 1)
+```
+
+```{r plotIer5, include = FALSE, fig.cap = paste0("\\textit{Ier5} transcript and norepinephrine in substantia nigra samples of the Vicari data (rows). with GAM correlation estimates ", signif(nor["V11T16-085_A1", "Correlation"], 3) ,", ",  signif(nor["V11T16-085_B1", "Correlation"], 3), " and ",signif(nor["V11T16-085_C1", "Correlation"], 3) ," and corresponding p-values ", signif(nor["V11T16-085_A1", "P.value"], 2),", ", signif(nor["V11T16-085_B1", "P.value"], 2), " and ", signif(nor["V11T16-085_C1", "P.value"], 2) ," in samples V11T16-085\\_A1, V11T16-085\\_B1 and V11T16-085\\_C1, respectively. None of these pairs is significant according to bivariate Moran's I.\\label{fig:ier5ne}"), fig.height = 5}
+plotVicariSingle("Ier5", "X690.27454", samples = SNsamples, size = 0.6)
+```
+
+\clearpage
+
+### Multi-image analysis
+
+We perform a multi-image analysis separately for the striatum and the substantia nigra sections, with a random effect for mouse for the former samples. The p-value distributions are shown in \fref{fig:pvalVicariRep}.
+
+```{r vicariP, fig.cap = "P-value distributions of replicated analysis of GAMs and Moran's I for striatum and substantia nigra samples for GAMs and bivariate Moran's I (plot titles) in the Vicari data\\label{fig:pvalVicariRep}."}
+par(mfrow = c(2, 2))
+foo <- lapply(vicariGroups, function(vg) {
+  lapply(selfName(c("GAM", "MoransI_sbivar")), function(meth) {
+    hist(vicariMulti2[[vg]][[meth]][, "pVal"], main = paste0(switch(vg,
+      "SN" = "Substantia nigra",
+      "Stria" = "Striatum"
+    ), "\n", switch(meth,
+      "GAM" = "GAMs",
+      "MoransI_sbivar" = "Moran's I"
+    )), xlab = "P-value")
+  })
+})
+par(mfrow = c(1, 1))
+rm(vicariMulti, vicariMulti2)
+```
+
+# Recommendations
+
+\begin{table}
+\footnotesize
+\begin{tabularx}{1.0\textwidth}{|>{\setlength\hsize{0.82\hsize}\setlength\linewidth{\hsize}}X|>{\setlength\hsize{0.9\hsize}\setlength\linewidth{\hsize}}X|>{\setlength\hsize{1.28\hsize}\setlength\linewidth{\hsize}}X|}
+\hline
+Method & Strengths & Weaknesses \\
+\hline
+Methods with permutation or randomisation null distributions: \textit{SpaGene}, \textit{SpatialDM}, \textit{LIANA+}, Geary's C, Lee's L some versions of bivariate Moran's I &
+\begin{itemize}
+\item Fast
+\end{itemize} &
+\begin{itemize}
+\item{Lee's L requires spot matching for differing resolutions}
+\item {Lak robustness to SAC, leading to spurious significances for bivariate associations}
+\end{itemize}\\
+\hline
+Pearson correlation  & 
+\begin{itemize}
+\item{Fast}
+\item{Intuitive interpretation}
+\end{itemize} &
+\begin{itemize}
+ \item{Requires spot matching for differing resolutions}
+ \item{Yields spurious significances if SAC is present in both variables}
+\end{itemize}\\
+\hline
+Modified t-test &
+\begin{itemize}
+\item{Intuitive interpretation: the quantity of interest is Pearson correlation}
+\item{Robust to many types of SAC}
+\end{itemize} &
+\begin{itemize}
+\item{Requires spot matching for differing resolutions}
+\end{itemize}\\
+\hline
+Random shift test &
+\begin{itemize}
+\item Applicable to any measure of spatial association
+\item Preserves SAC in permutation test
+\end{itemize} &
+\begin{itemize}
+\item Computationally demanding
+\item The p-values are discretized by the number of random shifts
+\item Limited power as some spatial association is retained in the random shifts
+\end{itemize}\\
+\hline
+Bivariate Moran's I [sbivar] &
+\begin{itemize}
+\item Nonparametric
+\item Intuitive interpretation: closest equivalent of Pearson correlation under disjoint coordinates
+\end{itemize} &
+\begin{itemize}
+\item Weight matrix needs to be user defined, determining sensitivity to different types of spatial patterns
+\item Affected by heteroskedasticity
+\end{itemize}\\
+\hline
+Bivariate Gaussian processes (GPs) [sbivar] &
+\begin{itemize}
+\item Robust to many types of SAC
+\item Amendable to other outcome distributions and link functions
+\end{itemize} &
+\begin{itemize}
+\item Very high computational demands
+\item Does not provide a measure of bivariate association strength, only a p-value
+\item Relies on parametric assumptions
+\item Complex mathematical derivation
+\end{itemize}\\
+\hline
+Generalized additive models (GAMs) [sbivar] &
+\begin{itemize}
+\item Easily amendable to other outcome distributions and link functions
+\item Intuitive interpretation and visualisation
+\item Good power to detect moderate to long range differences
+\end{itemize} &
+\begin{itemize}
+\item Low power to detect short-range bivariate spatial association
+\item Struggles with hotspots and edge effects
+\item Relies on parametric assumptions
+\item Version accounting for residual SAC in a GAMM is very slow
+\end{itemize}\\
+\hline
+\end{tabularx}
+\caption{\label{tab:overview}Methods to test for bivariate spatial association considered in this study, with strengths and weaknesses. [sbivar] indicates methods proposed or improved in this work and available in the \sbivar R-package.} 
+\end{table}
+
+\clearpage
+
+# Software versions
+
+```{r sessionInfo}
+sessionInfo()
+```
+
+\printbibliography
