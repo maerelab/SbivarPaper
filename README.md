@@ -1,1 +1,1 @@
-This repo contains all code for running simulations and real data analysis of our [preprint](https://doi.org/10.64898/2026.06.19.732250) "Statistical tests for bivariate spatial association across multi-omics data with disjoint coordinates".
+This repo contains all code for running simulations and real data analysis of our [preprint](https://doi.org/10.64898/2026.06.19.732250) "Statistical tests for bivariate spatial association across multi-omics data with disjoint coordinates". The R-package _sbivar_ is availabe from this [repo](https://github.com/sthawinke/sbivar).
