@@ -21,7 +21,7 @@ knitr::opts_chunk$set(
 libs <- c(
   "ggplot2", "reshape2", "xtable", "knitr", "gplots", "openxlsx", "patchwork",
   "parallel", "dplyr", "Matrix", "RANN", "SpatialPack", "stringr", "mvtnorm", "spdep", "ggh4x",
-  "nlme", "NTSS", "peakRAM", "gstat", "SpaGene", "rhdf5", "anndata", "Cardinal", "sbivar", "Seurat", "smoppix", "fdrtool", "nleqslv", "httr", "bispdep", "jsonlite", "spatstat", "lmerTest", "abind"
+  "nlme", "NTSS", "peakRAM", "gstat", "SpaGene", "rhdf5", "anndata", "Cardinal", "sbivar", "Seurat", "smoppix", "fdrtool", "nleqslv", "httr", "bispdep", "jsonlite", "spatstat", "lmerTest", "abind", "latticeExtra"
 )
 for (i in libs) {
   suppressPackageStartupMessages(library(i, character.only = TRUE, quietly = TRUE))
@@ -40,9 +40,9 @@ foo <- lapply(c("GraphsPaper", "Results", "Data", "Data/Godfrey2025", "Data/Vica
 ```
 
 ```{r defineLabels}
-spatPats <- selfName(c("none", "singleGradient", "orthogonalGradient", "independentGPs", "independentZones", "independentStreak", "dependentGPs", "dependentGPsNeg", "dependentGPsnoSAC", "sharedGradient", "oppositeGradient", "dependentStreak", "oppositeStreak", "dependentZones", "oppositeZones", "dependentStreakGPs", "dependentZonesGPs"))
+spatPats <- selfName(c("none", "independentGPs", "independentZones", "dependentGPs", "dependentStreak", "dependentZones",  "dependentStreakGPs", "dependentZonesGPs"))
 spatPatsShow <- selfName(c("none", "independentGPs", "dependentGPs", "dependentZones", "dependentStreak", "dependentStreakGPs", "dependentZonesGPs"))
-spatPatsLabels <- c("No spatial pattern", "Single gradient", "Orthogonal gradients", "Independent GPs", "Independent zones", "Perpendicular streak", "Dependent GPs", "Depedent GPs\n(negative)", "Dependent GPs\n(no SAC)", "Shared gradient", "Opposite gradient", "Streak", "Opposite streak", "Zones", "Opposite zones", "Streak + GPs", "Zones + GPs")
+spatPatsLabels <- c("No spatial pattern", "Independent GPs", "Independent zones", "Dependent GPs", "Streak",  "Zones", "Streak + GPs", "Zones + GPs")
 spatPatsShowLabels <- spatPatsLabels[match(spatPatsShow, spatPats)]
 powerColours <- c("chartreuse3", "darkgreen", "black", "aquamarine3", "orange", "bisque", "darkslategray4", "bisque3", "cyan", "grey25", "magenta", "pink", "darkgoldenrod3", "brown", "red", "blue", "darkorchid3")
 methLevels <- c("MoransI_Czaplewski", "MoransI_permutation", "MoransI_SpatialDM", "MoransI_RandomShift", "LeesL_asymptotic", "LeesL_permutation", "GearysC_permutation", "GearysC_randomisation", "SpaGene", "SpaceBF", "PearsonCor", "modTtest", "RandomShift", "MoransI_sbivar", "GP", "GAM", "GAMM")
@@ -95,7 +95,7 @@ The lower and upper bounds of the bivariate Moran's I statistic are dependent on
 
 #### Variance
 
-The expectation and maximum absolute value are the same under the randomisation and independence null hypotheses, but the variance differs as it is affected by SAC, as derived in \eqref{eq:varMoranNum} in the main paper. We estimate the SAC matrices nonparametrically using Matheron’s variogram estimator \parencite{Matheron1963} following \textcite{Dutilleul2008}. Next we fit linear and exponential functions through the estimate variogram using the \textit{fit.variogram} function in the \textit{gstat} R-package \cite{Pebesma2004}, fixing the sill to 1, and retain the fits ($\hat{\sigma}_x$ and $\hat{\sigma}_y$) with the smallest mean squared error loss. Then we plug the covariance as a function of distance $\hat{\sigma}_x(d_{ij})$ and $\hat{\sigma}_y(d_{kl})$ into \eqref{eq:varMoranNum} in the main paper, to yield $\widehat{\text{Var}}(I_{xy}) = \sum_{i=1}^n\sum_{j=1}^m\sum_{k=1}^n\sum_{l=1}^mw_{ij}w_{kl}\hat{\sigma}_x(d_{ij})\hat{\sigma}_y(d_{kl})$. This equals $\widehat{\text{Var}}(I_{xy}) = tr(\mb W^t \bs \Sigma_x \mb W \bs \Sigma_y)$, with $\Sigma_x$ and $\Sigma_x$ the autocovariance matrices built by evaluating the covariance functions in the observed distance matrices. The formula for joint coordinate sets is the same; we do not distinguish between association within the same coordinates and between nearby coordinates, the former ones simply get the highest weight.
+The expectation and maximum absolute value are the same under the randomisation and independence null hypotheses, but the variance differs as it is affected by SAC, as derived in \eqref{eq:varMoranNum} in the main paper. We estimate the SAC matrices nonparametrically using Matheron’s variogram estimator \parencite{Matheron1963} following \textcite{Dutilleul2008}. Next we fit linear and exponential functions through the estimate variogram using the \textit{fit.variogram} function in the \textit{gstat} R-package \cite{Pebesma2004}, fixing the sill to 1, and retain the fits ($\hat{\sigma}_x$ and $\hat{\sigma}_y$) with the smallest mean squared error loss. Then we plug the covariance as a function of distance $\hat{\sigma}_x(d_{ij})$ and $\hat{\sigma}_y(d_{kl})$ into \eqref{eq:varMoranNum} in the main paper, to yield $\widehat{\text{Var}}(I_{xy}) = \sum_{i=1}^n\sum_{j=1}^m\sum_{k=1}^n\sum_{l=1}^mw_{ij}w_{kl}\hat{\sigma}_x(d_{ij})\hat{\sigma}_y(d_{kl}) = tr(\mb W^t \hat{\bs\Sigma}_x \mb W  \hat{\bs\Sigma}_y)$. The formula for joint coordinate sets is the same; we do not distinguish between association within the same coordinates and between nearby coordinates, the former ones simply get the highest weight.
 
 #### Empirical distribution \label{sec:empDistr}
 
@@ -331,7 +331,7 @@ rm(dat)
 plotxy(xMat, yMat, pchY = "+", cex = 0.8)
 ```
 
-```{r plotDesigns, fig.cap = "Visualisation of the different designs (rows) and outcomes (columns) for the parametric simulation study with disjoint coordinate sets.\\label{fig:designs}", fig.height = 10.5}
+```{r plotDesigns, fig.cap = "Visualisation of the different designs (rows) and outcomes (columns) for the parametric simulation study with disjoint coordinate sets. Outcomes are scaled to the [0,1] range for legibility.\\label{fig:designs}", fig.height = 10.5}
 B <- 25^2
 xB <- seq(0, 1, length.out = sqrt(B))
 newGrid <- expand.grid(x = xB, y = xB)
@@ -547,7 +547,7 @@ rm(locObjsMsi, locObjsStx)
 # To be found in S1_data
 landmarksDf <- read.csv("S1_data/landmarks.csv", row.names = 1)
 # Landmarks are given here, the rest of the MAGPIE pipeline is available from https://core-bioinformatics.github.io/magpie/tutorial/SMA_tutorial.html, using the no_HE option and 'affine transformation'
-nSimsJitter <- 10 # 20
+nSimsJitter <- 10 #20
 sdJitter <- c(0, 0.5, 1, 1.5, 2, 3)
 landmarksGrid <- expand.grid("rep" = seq_len(nSimsJitter), "sdJitter" = sdJitter, "sample" = sampleNamesMouse, stringsAsFactors = FALSE)
 lmFolder <- "Results/landmarks/"
@@ -597,7 +597,7 @@ rm(foo)
 
 #### Single-image analysis
 
-\fref{fig:nonParAll} in the main text summarizes the results of the nonparametric simulations on single images, here we show more exhaustive results. Figs \ref{fig:qqGodfrey}-\ref{fig:qqVicari} demonstrate that bivariate Moran's I with random shift or randomisation null distribution, and GAMs when both modalities are permuted, often have p-value distributions that are larger than uniform, whereas many existing methods have smaller-than-uniform p-value distributions. Next we investigate which features are prone to incur false findings. As measure of SAC, we calculate univariate Moran's I values $\mb X^t \mb W \mb X$ for all features of the original data, constructing the weight matrix as for the bivariate case, with Gaussian weights and decay parameter $\eta = 10^{-3}$, and setting the diagonal to zero. Boxplots of the univariate Moran's I values thus calculated are shown in Figs \ref{fig:boxplotMoransIgodfrey}-\ref{fig:boxplotMoransIvicari}, showing considerable SAC in almost all images, with the metabolome exhibiting the strongest SAC. We model the probability that a feature is detected as significantly associated with a permuted feature from the other modality through generalized linear mixed models using the *glmer* function in the *lme4* package \parencite{Bates2015} with a binomial outcome distribution. Fixed effects were the dataset, the non-permuted modality, the interaction of the previous two and univariate Moran's I of the non-permuted feature; random intercepts were included for the sections. Separate models were fitted per method. Modeled probabilities of detection based in the fixed effects are plotted in \fref{fig:moransIuniFindings}, revealing that for the methods found liberal in the simulations, features with high SAC in the non-permuted modality are more likely to incur false findings.
+\fref{fig:nonParAll} in the main text summarizes the results of the nonparametric simulations on single images, here we show more exhaustive results. Figs \ref{fig:qqGodfrey}-\ref{fig:qqVicari} demonstrate that bivariate Moran's I with random shift or randomisation null distribution, and GAMs when both modalities are permuted, often have p-value distributions that are larger than uniform, whereas many existing methods have smaller-than-uniform p-value distributions. Next we investigate which features are prone to incur false findings. As measure of SAC, we calculate univariate Moran's I values $\mb X^t \mb W \mb X$ for all features of the original data, constructing the weight matrix as for the bivariate case, with Gaussian weights and decay parameter $\eta = 10^{-3}$, and setting the diagonal to zero. Boxplots of the univariate Moran's I values thus calculated are shown in Figs \ref{fig:boxplotMoransIgodfrey}-\ref{fig:boxplotMoransIvicari}, showing considerable SAC in almost all images, with the metabolome exhibiting the strongest SAC. We model the probability that a feature is detected as significantly associated with a permuted feature from the other modality through generalized linear mixed models using the *glmer* function in the *lme4* package \parencite{Bates2015} with a binomial outcome distribution and logit link. Univariate Moran's I of the non-permuted feature was included as fixed effect; random intercepts and random slopes for univariate Moran's I were included for the sections. Separate models were fitted per method, permuted modality and dataset. Modeled probabilities of detection as a function of univariate Moran's I are plotted in \fref{fig:moransIuniFindings}, revealing that for the methods found liberal in the simulations, features with high SAC in the non-permuted modality are more likely to incur false findings.
 
 ```{r loadGodfrey}
 if (!file.exists(godfreyFile <- "Data/godfrey2025.RData")) {
@@ -1169,49 +1169,59 @@ moransIincurringVicari$what <- factor(moransIincurringVicari$what,
 )
 ```
 
-```{r moransIincurringfalseVicari, fig.cap = "Predicted probability of detection as significant finding (y-axis) as a function of univariate Moran's I (x-axis) for different methods (colour), non-permuted modalities (columns) and dataset (rows) in the nonparametric simulation, modeled by a generalized linear mixed model with binomial outcome distribution (see text for details). The predictions are only shown within the range of observed univariate Moran's I values. The horizontal dotted line indicates the significance level of 0.05.\\label{fig:moransIuniFindings}", fig.height = 4.5}
+```{r moransIincurringfalseVicari, fig.cap = "Predicted probability of detection as significant finding (y-axis) as a function of univariate Moran's I (x-axis) for different methods (colour), non-permuted modalities (columns) and dataset (rows) in the nonparametric simulation, modeled by a generalized linear mixed model with binomial outcome distribution (see text for details). The predictions are only shown within the range of observed univariate Moran's I values and for methods that made any findings. The horizontal dotted line indicates the significance level of 0.05.\\label{fig:moransIuniFindings}", fig.height = 4.5}
 moransIincurringVicari$negFindings <- numFeatsGodfrey - moransIincurringVicari$findings
-fitsMoranGodfrey <- tapply(selfName(seq_len(nrow(moransIincurringGodfrey))), as.character(moransIincurringGodfrey$Method),
+fitsMoranGodfrey <- tapply(selfName(seq_len(nrow(moransIincurringGodfrey))), paste(as.character(moransIincurringGodfrey$Method), as.character(moransIincurringGodfrey$what), sep = "--"),
   FUN = function(i) {
-    glmer(cbind(findings, negFindings) ~ MoransI * what + (1 | sample), family = binomial(), data = moransIincurringGodfrey[i, ])
+    try(glmer(cbind(findings, negFindings) ~ MoransI + (MoransI | sample), family = binomial(), data = moransIincurringGodfrey[i, ]))
   }
 )
-fitsMoranVicari <- tapply(selfName(seq_len(nrow(moransIincurringVicari))), as.character(moransIincurringVicari$Method),
+fitsMoranGodfrey = Filter(fitsMoranGodfrey, f = function(x) is(x, "glmerMod"))
+fitsMoranVicari <- tapply(selfName(seq_len(nrow(moransIincurringVicari))), paste(as.character(moransIincurringVicari$Method),moransIincurringVicari$what, sep = "--"),
   FUN = function(i) {
-    glmer(cbind(findings, negFindings) ~ MoransI * what + (1 | sample), family = binomial(), data = moransIincurringVicari[i, ])
+    glmer(cbind(findings, negFindings) ~ MoransI + (MoransI| sample), family = binomial(), data = moransIincurringVicari[i, ])
   }
 )
 predGridGod <- base::do.call(rbind, lapply(unique(moransIincurringGodfrey$what), function(what) {
   Range <- range(moransIincurringGodfrey$MoransI[moransIincurringGodfrey$what == what])
-  data.frame("MoransI" = seq(Range[1], Range[2], length.out = 200), "what" = what)
+  data.frame("MoransI" = seq(Range[1], Range[2], length.out = 200))
 }))
 # Limit to observed univariate Moran's I
 fitsMoranGodfreyPred <- base::do.call(rbind, lapply(names(fitsMoranGodfrey), function(x) {
+    Split = strsplit(x, "--")[[1]]    
   data.frame(predGridGod,
-    Dataset = "Godfrey", Method = x,
+    Dataset = "Godfrey", Method = Split[1], what = Split[2],
     "Probability_of_detection" = predict(fitsMoranGodfrey[[x]], newdata = predGridGod, re.form = NA, type = "response")
   )
 }))
 predGridVic <- base::do.call(rbind, lapply(unique(moransIincurringVicari$what), function(what) {
   Range <- range(moransIincurringVicari$MoransI[moransIincurringVicari$what == what])
-  data.frame("MoransI" = seq(Range[1], Range[2], length.out = 200), "what" = what)
+  data.frame("MoransI" = seq(Range[1], Range[2], length.out = 200))
 }))
-fitsMoranVicariPred <- base::do.call(rbind, lapply(names(fitsMoranVicari), function(x) {
+fitsMoranVicariPred <- base::do.call(rbind, lapply(names(fitsMoranVicari), function(x){
+    Split = strsplit(x, "--")[[1]]    
   data.frame(predGridVic,
-    Dataset = "Vicari", Method = x,
+    Dataset = "Vicari", Method = Split[1], what = Split[2],
     "Probability_of_detection" = predict(fitsMoranVicari[[x]], newdata = predGridVic, re.form = NA, type = "response")
   )
 }))
 fitsMoranGodfreyPred <- factorizeDf(fitsMoranGodfreyPred)
 fitsMoranVicariPred <- factorizeDf(fitsMoranVicariPred)
-ggplot(data = rbind(fitsMoranGodfreyPred, fitsMoranVicariPred), aes(y = Probability_of_detection, x = MoransI, col = Method)) +
-  geom_line(linewidth = .35) +
-  scale_colour_manual(values = powerColours) +
+df = rbind(fitsMoranGodfreyPred, fitsMoranVicariPred)
+df$what = factor(df$what, levels = c("Transcriptomics", "Metabolomics"), ordered = TRUE)
+ggplot(data = df, aes(y = Probability_of_detection, x = MoransI, col = Method)) +
+  geom_line(linewidth = .35) + scale_colour_manual(values = powerColours) +
   facet_grid(rows = vars(Dataset), cols = vars(what), scales = "free_x") +
-  ylab("Probability of detection") +
-  xlab("Univariate Moran's I") +
+  ylab("Probability of detection") + xlab("Univariate Moran's I") +
   theme(strip.text.x = element_text(size = 8.5), strip.text.y = element_text(size = 8.5)) +
   geom_hline(yintercept = sigLevel, linetype = "dotted")
+```
+
+```{r diagnostics, include = FALSE}
+do.call(c, c(lapply(fitsMoranGodfrey, plot, form = resid(., type = "deviance") ~ fitted(.)), list(layout = c(3, 7))))
+do.call(c, c(lapply(fitsMoranGodfrey, plot, form = resid(., type = "deviance") ~ MoransI), list(layout = c(3, 7))))
+do.call(c, c(lapply(fitsMoranVicari, plot,  form = resid(., type = "deviance") ~ fitted(.)), list(layout = c(2, 2))))
+do.call(c, c(lapply(fitsMoranVicari, plot,  form = resid(., type = "deviance") ~ MoransI), list(layout = c(2, 2))))
 rm(moransIincurringVicari, fitsMoranVicariPred, fitsMoranGodfreyPred, fitsMoranVicari, fitsMoranGodfrey)
 ```
 
@@ -1937,7 +1947,7 @@ if (!file.exists(xMatsFile <- "Results/xMats.RData")) {
 jitterGrid <- expand.grid(stringsAsFactors = FALSE, "spatPats" = spatPatsShow, "rep" = seq_len(nSimsJitter), "sdJitter" = sdJitter, "sample" = sampleNamesMouse)
 NugsJitter <- c(0.85, 0.85)
 RangsJitter <- c(0.1, 0.1, 0.1)
-if (!file.exists(jitterFile <- "Results/jitterDistr.RData")) {
+if (!file.exists(jitterFile <- "Results/jitterDistr.RData")){
   load(xMatsFile)
   jitterRes <- lapply(seq_len(nrow(jitterGrid)), function(ii) {
     spatPat <- jitterGrid[ii, "spatPats"]
@@ -1990,16 +2000,16 @@ if (!file.exists(jitterFile <- "Results/jitterDistr.RData")) {
     pVals
   })
   save(jitterRes, file = jitterFile)
-} else {
+} else { 
   load(jitterFile)
-}
+} 
 ```
 
-```{r jitterProc, fig.cap = "Type I error (two left panels) and power (five right panels) (y-axis) averaged over all nine Vicari data template sections as a function of standard deviation by which the landmarks were jittered (x-axis) for different methods (colour), spatial patterns (columns). A standard deviation of 0 corresponds to an analysis using the true, unjittered coordinates.\\label{fig:jitter}", fig.height = 5, fig.width = 7}
-id <- which(sapply(jitterRes, is.matrix))
+```{r jitterProc, fig.cap = "Type I error and power (y-axis, rows) averaged over all nine Vicari data template sections as a function of standard deviation by which the landmarks were jittered (x-axis) for different methods (colour) and spatial patterns (columns). A standard deviation of 0 corresponds to an analysis using the true, unjittered coordinates.\\label{fig:jitter}", fig.height = 5, fig.width = 7}
+id <- which(sapply(jitterRes, is.matrix)) 
 jitterMolt <- do.call(what = rbind, lapply(
   id, # seq_along(jitterRes),
-  function(i) {
+  function(i){
     tmp <- jitterRes[[i]]
     TP <- if (jitterGrid$spatPats[[i]] %in% c("none", "independentGPs")) {
       rep(FALSE, nrow(tmp))
@@ -2269,11 +2279,11 @@ ggplot(data = repSimsTimingAgg, aes(col = Method, x = Scaling, y = time)) +
 rm(repSimsTimingAgg, repSimsTiming, repSimsTiming, designDfRep)
 ```
 
-\fref{fig:repSims} shows type I error and power for different methods under replication, proving the added value of scaling the Moran's I statistic by its maximum absolute value, but suggesting that inverse weighting by variance is not a good strategy. \fref{fig:timingsRep} shows a timing comparison on an Intel Core i5-11400H 2.70GHz processor.
+\fref{fig:repSims} shows type I error and power for different methods under replication, proving the added value of scaling the Moran's I statistic by its maximum absolute value, but suggesting that inverse weighting by variance does not improve the power. \fref{fig:timingsRep} shows a timing comparison on an Intel Core i5-11400H 2.70GHz processor.
 
 \clearpage
 
-# Real datasets
+# Case studies
 
 ## Godfrey et al. (2025)
 
@@ -2366,7 +2376,7 @@ rm(foundOnlyGamPos)
 onlyGamTopPairsPos <- simplify2array(onlyGamTopPairsPos[sapply(onlyGamTopPairsPos, is.character)])
 ```
 
-```{r gamposGod, fig.cap = paste("Pairs found most significantly positively correlated by GAMs in different sections of the Godfrey data (rows), but not detected in the original analysis.\\label{fig:gamsOnlyGodfreyPos}", pasteCA(rownames(moranTTpos)[moranTTpos[, "pAdj"]<sigLevel]), "were also found significant by bivariate Moran's I."), fig.height = 8.9}
+```{r gamposGod, fig.cap = paste("Gene-metabolite pairs found most significantly positively correlated by GAMs in different sections of the Godfrey data (rows), but not detected in the original analysis. Pairs in\\label{fig:gamsOnlyGodfreyPos}", pasteCA(rownames(moranTTpos)[moranTTpos[, "pAdj"]<sigLevel]), "were also found significant by bivariate Moran's I."), fig.height = 8.9}
 plotGodfreyAll(pairs = onlyGamTopPairsPos, size = 0.37, samples = names(onlyGamTopPairsPos), xLimShift = 0.04)
 topMetsPos <- getMets(onlyGamTopPairsPos)
 topMetsPosCom <- allMetsCommon[topMetsPos]
@@ -2374,7 +2384,7 @@ topMetsPosCom <- allMetsCommon[topMetsPos]
 
 We can confirm all highest correlations discussed by the authors in the main text of their original publication. Differences in findings with the full supplementary results are shown in \fref{fig:GAMGodfrey} in the main text and \fref{fig:gamsOnlyGodfreyPos} here for findings only by our methods, and Figs \ref{fig:gamsOnlyOriginal}-\ref{fig:gamsOnlyOriginal2} for findings in the original analysis but not by our methods.
 
-```{r foundByGambutnotoriginallyPlot, fig.height = 5, fig.cap = "Pairs with highest correlation found in the original analysis, but not declared significant by bivariate Moran's I or GAMs.\\label{fig:gamsOnlyOriginal}"}
+```{r foundByGambutnotoriginallyPlot, fig.height = 5, fig.cap = "Gene-metabolite pairs with highest correlation found in the original analysis, but not declared significant by bivariate Moran's I or GAMs.\\label{fig:gamsOnlyOriginal}"}
 foundOnlyOrig <- lapply(samplesGodfrey, function(sam) {
   foundOriginal <- godfreyMetTable[godfreyMetTable$Sample == names(mappingSamples)[mappingSamples == sam], ]
   originalPairs <- make.names(paste0(foundOriginal$Genes, "__", foundOriginal$MZmatched))
@@ -2393,7 +2403,7 @@ resGAM <- t(mapply(realFitsGodfrey[samOrig], gp1, FUN = function(x, y) x$GAM[y, 
 ttt <- godfreyMetTable[(godfreyMetTable$MZmatched %in% getMets(gp1)) & (godfreyMetTable$Genes %in% getGenes(gp1)), ]
 ```
 
-```{r foundByGambutnotoriginallyPlot2, fig.cap = "Pairs with second highest significant correlation found in the original analysis, but not declared significant by bivariate Moran's I or GAMs.\\label{fig:gamsOnlyOriginal2}", fig.height = 4.7}
+```{r foundByGambutnotoriginallyPlot2, fig.cap = "Gene-metabolite pairs with second highest significant correlation found in the original analysis, but not declared significant by bivariate Moran's I or GAMs.\\label{fig:gamsOnlyOriginal2}", fig.height = 4.7}
 onlyOrigTopPairs2 <- sapply(foundOnlyOrig, function(x) x[2])
 idOrig <- !is.na(onlyOrigTopPairs2)
 gp1 <- onlyOrigTopPairs2[idOrig]
@@ -2580,13 +2590,13 @@ rm(foo, fooMet, fooAll)
 
 #### Comparison to authors' findings
 
-In the original publication the authors used nearest neighbour distances to find a one-to-one mapping between metabolic and transcriptomic samples, for which then Pearson correlation is calculated \parencite{Vicari2024}. The investigation focused on the metabolite dopamine, for which positive and negative correlations with a number of genes were found, but some were not confirmed by our analysis based on bivariate Moran's I or GAMs (\fref{fig:vicariNotConfirmedStria}-\ref{fig:vicariNotConfirmedSN}). We noticed that bivariate Moran's I and GAMs are complementary, as the former struggles with heteroskedasticity, whereas the latter with sharp hotspots and edge effects.
+In the original publication the authors used nearest neighbour distances to find a one-to-one mapping between metabolic and transcriptomic samples, for which then Pearson correlation is calculated \parencite{Vicari2024}. The investigation focused on the metabolite dopamine, for which positive and negative correlations with a number of genes were found, but some were not confirmed by our analysis based on bivariate Moran's I or GAMs (\fref{fig:vicariNotConfirmedStria}-\ref{fig:vicariNotConfirmedSN}).
 
 ```{r moransICons}
 SubstantiaNigraGenes <- selfName(c("Th", "Slc6a3", "Slc18a2", "Ddc", "Dlk1", "Ret", "Slc10a4", "Snca", "Pvalb"))
 StriataGenes <- selfName(c("Pcp4", "Tac1", "Hpca", "mt.Nd3", "Camkk2", "Camk2n1", "Atp2b1", "Penk", "Cartpt"))
 numFeatsVicariReal <- 1e3
-if (!file.exists(moranVicariFile <- "Results/VicariRes.RData")) {
+if (!file.exists(moranVicariFile <- "Results/VicariRes.RData")){ 
   allResVicari <- lapply(sampleNamesMouse, function(sn) {
     yFeats <- intersect(unMetsIdentified, colnames(msiObjs[[sn]]))
     MsiDat <- normMat(msiObjs[[sn]], norm = "rel")[, yFeats]
@@ -2612,13 +2622,11 @@ if (!file.exists(moranVicariFile <- "Results/VicariRes.RData")) {
     )
   })
   save(allResVicari, file = moranVicariFile)
-} else {
-  load(moranVicariFile)
-}
+} else {load(moranVicariFile)}
 ```
 
 ```{r compareToAuthorfindings}
-Metab <- c("Dopamine" = "X674.2805")
+Metab <- c("Dopamine" = "X674.2805") 
 SNsamples <- grep("V11T16-085", value = TRUE, sampleNamesMouse)
 Striasamples <- grep("V11T16-085", value = TRUE, sampleNamesMouse, invert = TRUE)
 GAMresDop <- sapply(allResVicari[Striasamples], function(xx) {
@@ -2626,13 +2634,13 @@ GAMresDop <- sapply(allResVicari[Striasamples], function(xx) {
   baa <- sapply(StriataGenes, function(gene) {
     tmp <- xx$GAM$result$pVal[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam)]
     if (length(tmp)) tmp else NA
-  })
+  }) 
   baa
 })
 MoranresDop <- sapply(allResVicari[Striasamples], function(xx) {
   Nam <- rownames(xx$MoransI_sbivar$result)
   baa <- sapply(StriataGenes, function(gene) {
-    tmp <- xx$MoransI_sbivar$result[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam), "pVal"]
+    tmp <- xx$MoransI_sbivar$result[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam), "pAdj"]
     if (length(tmp)) tmp else NA
   })
   baa
@@ -2641,7 +2649,7 @@ unconfirmedStriata <- intersect(rownames(GAMresDop)[apply(GAMresDop, 1, allNotSi
 ```
 
 ```{r normStuff}
-exprObjsNorm <- lapply(exprObjs, function(x) normMat(x, "rel"))
+exprObjsNorm <- lapply(exprObjs, function(x) normMat(as.matrix(x), "rel"))
 rm(exprObjs)
 msiObjsNorm <- lapply(msiObjs, normMat, "rel")
 rm(GAMresDop, msiObjs)
@@ -2649,11 +2657,11 @@ foo <- gc()
 ```
 
 ```{r plotStria, fig.cap = "Genes (all but last row) found by the authors to be associated to dopamine (last row), but not significant for bivariate Moran's I or GAMs, in different sections of the striatum of the Vicari data where dopamine was detected (columns).\\label{fig:vicariNotConfirmedStria}", fig.height = 8.5}
-plotVicariGenesMets(samples = grep("V11L12-038", Striasamples, invert = TRUE, value = TRUE), size = 0.54, mets = Metab, genes = unconfirmedStriata)
+plotVicariGenesMets(samples = grep("V11L12-038", Striasamples, invert = TRUE, value = TRUE), size = 0.54, mets = Metab, genes = unconfirmedStriata) 
 ```
 
-```{r plotSubstNigra, fig.cap = "Genes (all but last row) for which both bivariate Moran's I and GAMs find a different association to dopamine (last row) than the authors, in different substantia nigra sections of the Vicari data (columns). \\textit{Snca} was found positively associated by the authors but negatively associated or not significant by \\sbivar. \\textit{Pvalb} was found negatively associated by the authors but positively associated or not significant by \\sbivar. \\label{fig:vicariNotConfirmedSN}", fig.height = 8.5}
-GAMresDopSN <- sapply(allResVicari[SNsamples], function(xx) {
+```{r plotSubstNigra, fig.cap = "Genes (all but last row) for which both bivariate Moran's I and GAMs find a different association to dopamine (last row) than the authors, in different substantia nigra sections of the Vicari data (columns). \\textit{Snca} was found positively associated by the authors but negatively associated or not significant by GAMs or bivariate Moran's I. \\textit{Pvalb} was found negatively associated by the authors but positively associated by GAMs and not significant by bivariate Moran's I. \\label{fig:vicariNotConfirmedSN}", fig.height = 8.5}
+GAMresDopSN <- sapply(allResVicari[SNsamples], function(xx){
   Nam <- rownames(xx$GAM$result)
   sapply(SubstantiaNigraGenes, function(gene) {
     tmp <- xx$GAM$result$pVal[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam)]
@@ -2670,13 +2678,13 @@ GAMresDopSNcor <- sapply(allResVicari[SNsamples], function(xx) {
 MoranresDopSN <- sapply(allResVicari[SNsamples], function(xx) {
   Nam <- rownames(xx$MoransI_sbivar$result)
   sapply(SubstantiaNigraGenes, function(gene) {
-    tmp <- xx$MoransI_sbivar$result[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam), "pVal"]
+    tmp <- xx$MoransI_sbivar$result[grepl(Metab, Nam) & grepl(paste0(gene, "__"), Nam), "pAdj"]
     if (length(tmp)) unname(tmp) else NA # [tmp<sigLevel]
   })
 })
 unconfirmedSN <- rownames(GAMresDopSN)[(apply(GAMresDopSN, 1, allNotSignif) & apply(MoranresDopSN, 1, allNotSignif)) | apply(GAMresDopSNcor, 1, function(x) all(x < 0, na.rm = TRUE))]
 # Pvalb was found negatively associated
-plotVicariGenesMets(samples = SNsamples, size = 0.43, mets = Metab, genes = unconfirmedSN)
+plotVicariGenesMets(samples = SNsamples, size = 0.43, mets = Metab, genes = c("Snca", "Pvalb"))
 rm(GAMresDopSN, unconfirmedSN, MoranresDopSN, GAMresDopSNcor)
 ```
 
@@ -2721,7 +2729,7 @@ if (!file.exists(realFitVicariMultiFile <- "Results/realFitsVicariMulti.RData"))
     list("GAM" = gamRes, "MoransI_sbivar" = outMoran)
   })
   save(vicariMulti, file = realFitVicariMultiFile)
-} else {
+} else { 
   load(realFitVicariMultiFile)
 }
 vicariMulti2 <- lapply(vicariMulti, function(x) {
@@ -2763,32 +2771,26 @@ smalVicGAMPos <- simplify2array(Filter(f = is.character, lapply(allResVicari, fu
 smallestVicariPosMoran <- t(sapply(names(smalVicGAMPos), function(yy) {
   allResVicari[[yy]]$MoransI_sbivar$result[smalVicGAMPos[[yy]], , drop = FALSE]
 }))
-nor <- base::do.call(rbind, Filter(f = is.data.frame, lapply(SNsamples, function(sn) {
-  tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result), "Ier5__X690.27454")
-  baa <- allResVicari[[sn]]$GAM$result[tmp, , drop = FALSE]
-  colnames(baa)[c(3, 5)] <- c("Correlation", "P.value")
-  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "P.value"), drop = FALSE])
-})))
 csrp1 <- base::do.call(rbind, lapply(sampleNamesMouse, function(sn) {
-  tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result), "Csrp1__X400.342015")
+  tmp <- intersect(makeRowNames(allResVicari[[sn]]$GAM$result), "Csrp1__X400.342015")
   baa <- allResVicari[[sn]]$GAM$result[tmp, , drop = FALSE]
-  colnames(baa)[c(3, 5)] <- c("Correlation", "P.value")
-  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "P.value"), drop = FALSE])
+  colnames(baa)[c(3, 6)] <- c("Correlation", "Adjusted p.value") 
+  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "Adjusted p.value"), drop = FALSE])
 }))
 sparc <- base::do.call(rbind, lapply(sampleNamesMouse, function(sn) {
   tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result), "Sparc__X698.49196")
   baa <- allResVicari[[sn]]$GAM$result[tmp, , drop = FALSE]
-  colnames(baa)[c(3, 5)] <- c("Correlation", "P.value")
-  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "P.value"), drop = FALSE])
+  colnames(baa)[c(3, 6)] <- c("Correlation", "Adjusted p.value")
+  if (length(tmp)) data.frame("Sample" = sn, baa[, c("Correlation", "Adjusted p.value"), drop = FALSE])
 }))
-moranCSRp1 <- sapply(sampleNamesMouse, function(yy) {
-  tmp <- intersect(rownames(allResVicari[[yy]]$GAM$result), "Csrp1__X400.342015")
-  allResVicari[[yy]]$MoransI_sbivar$result[tmp, ]
+moranCSRp1 <- sapply(sampleNamesMouse, function(sn) {
+  tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result), "Csrp1__X400.342015")
+  allResVicari[[sn]]$MoransI_sbivar$result[tmp, ]
 })
-moranier5 <- base::do.call(rbind, lapply(sampleNamesMouse, function(yy) {
-  tmp <- intersect(rownames(allResVicari[[yy]]$GAM$result), "Ier5__X690.27454")
-  allResVicari[[yy]]$MoransI_sbivar$result[tmp, ]
-}))
+moransparc <- sapply(sampleNamesMouse, function(sn) {
+  tmp <- intersect(rownames(allResVicari[[sn]]$GAM$result),  "Sparc__X698.49196")
+  allResVicari[[sn]]$MoransI_sbivar$result[tmp, ]
+})
 smallestVicari <- lapply(pValsAdjVicari, function(yy) {
   lapply(yy, function(zz) {
     if (min(zz, na.rm = TRUE) < sigLevel) {
@@ -2806,8 +2808,8 @@ fooo <- gc()
 
 ```{r moranallpaper, include = FALSE}
 p <- plotVicariAll(smalVicGAMPos, samples = names(smalVicGAMPos), axisLegendSize = 8.5, legendShift = 8, size = 0.82, stripTextSizeX = 7.8)
-ggsave(p, file = "GraphsPaper/PairVicari.pdf", height = 11.5)
-gc()
+ggsave(p, file = "GraphsPaper/PairVicari.pdf", height = 11.5) 
+gc() 
 ```
 
 \clearpage
@@ -2818,22 +2820,18 @@ The most significant findings are shown in \ref{fig:GAMsVicariNeg}-\ref{fig:Mora
 
 ```{r plotGAMAll, fig.cap = "Gene-metabolite pairs with most significant negative correlation according to GAMs in all sections of the Vicari data that have significant negative correlations. None of these findings are significant according to bivariate Moran's I. \\label{fig:GAMsVicariNeg}", fig.height = 8.9}
 plotVicariAll(smallestVicariNeg, samples = names(smallestVicariNeg))
-rm(smallestVicariNeg)
+rm(smallestVicariNeg) 
 ```
 
 ```{r plotMoranAll, fig.cap = "Gene-metabolite pairs most significant according to Moran's I in all sections of the Vicari data. Bivariate Moran's I captures many very short-range associations of genes with metabolite hotspots, but this may also indicate lack of robustness to heteroskedasticity.\\label{fig:MoransIVicari}", fig.height = 8.8}
 plotVicariAll(simplify2array(smallMoranVic[sapply(smallMoranVic, is.character)]), samples = names(smallMoranVic), axisLegendSize = 7, stripTextSizeX = 5.4, size = 0.25, xLimShift = 0, legendShift = -160)
-rm(smallMoranVic, pValsAdjVicari)
+rm(smallMoranVic, pValsAdjVicari) 
 ```
 
 \clearpage
 
-```{r plotcsrp1Palmitoyl, fig.cap = paste0("\\textit{Csrp1} transcript and palmitoyl-L-carnitine in striatum samples of the Vicari data (rows). This metabolite is only present in these two sections, where it is highly positively associated with Csrp1, with GAM correlation estimates ", signif(csrp1["V11L12-038_A1", "Correlation"], 3) ," and ",signif(csrp1["V11L12-038_B1", "Correlation"], 3) ," and corresponding p-values ", signif(csrp1["V11L12-038_A1", "P.value"], 2)," and ", signif(csrp1["V11L12-038_B1", "P.value"], 2) ," in samples V11L12-038\\_A1 and V11L12-038\\_B1, respectively. The associations are also significant according to bivariate Moran's I.\\label{fig:csrp1Palmitoyl}"), fig.height = 4}
-plotVicariSingle("Csrp1", "X400.342015", samples = sampleNamesMouse[1:2], size = 1)
-```
-
-```{r plotIer5, include = FALSE, fig.cap = paste0("\\textit{Ier5} transcript and norepinephrine in substantia nigra samples of the Vicari data (rows). with GAM correlation estimates ", signif(nor["V11T16-085_A1", "Correlation"], 3) ,", ",  signif(nor["V11T16-085_B1", "Correlation"], 3), " and ",signif(nor["V11T16-085_C1", "Correlation"], 3) ," and corresponding p-values ", signif(nor["V11T16-085_A1", "P.value"], 2),", ", signif(nor["V11T16-085_B1", "P.value"], 2), " and ", signif(nor["V11T16-085_C1", "P.value"], 2) ," in samples V11T16-085\\_A1, V11T16-085\\_B1 and V11T16-085\\_C1, respectively. None of these pairs is significant according to bivariate Moran's I.\\label{fig:ier5ne}"), fig.height = 5}
-plotVicariSingle("Ier5", "X690.27454", samples = SNsamples, size = 0.6)
+```{r plotcsrp1Palmitoyl, fig.cap = paste0("\\textit{Csrp1} transcript and palmitoyl-L-carnitine in striatum samples of the Vicari data (rows). This metabolite is only present in these two sections, where it is highly positively associated with Csrp1, with GAM correlation estimates ", signif(csrp1[grep("V11L12-038_A1", csrp1$sample), "Correlation"], 3) ," and ",signif(csrp1["V11L12-038_B1", "Correlation"], 3) ," and corresponding adjusted p-values ", signif(csrp1[grep("V11L12-038_B1", csrp1$sample),"Adjusted.p.value"], 2)," and ", signif(csrp1["V11L12-038_B1", "Adjusted.p.value"], 2) ," in samples V11L12-038\\_A1 and V11L12-038\\_B1, respectively. The associations are also significant according to bivariate Moran's I.\\label{fig:csrp1Palmitoyl}"), fig.height = 4}
+plotVicariSingle("Csrp1", "X400.342015", samples = sampleNamesMouse[1:2], size = 1) 
 ```
 
 \clearpage
@@ -2867,13 +2865,13 @@ rm(vicariMulti, vicariMulti2)
 \hline
 Method & Strengths & Weaknesses \\
 \hline
-Methods with permutation or randomisation null distributions: \textit{SpaGene}, \textit{SpatialDM}, \textit{LIANA+}, Geary's C, Lee's L some versions of bivariate Moran's I &
+Methods with permutation or randomisation null distributions: \textit{SpaGene}, \textit{SpatialDM}, \textit{LIANA+}, Geary's C, Lee's L and some versions of bivariate Moran's I &
 \begin{itemize}
 \item Fast
 \end{itemize} &
 \begin{itemize}
-\item{Lee's L requires spot matching for differing resolutions}
-\item {Lak robustness to SAC, leading to spurious significances for bivariate associations}
+\item{Geary'x C and Lee's L requires spot matching for differing resolutions}
+\item {Lack robustness to SAC, leading to spurious significances for bivariate associations}
 \end{itemize}\\
 \hline
 Pearson correlation  & 

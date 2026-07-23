@@ -1,9 +1,7 @@
 CC.test.Moran = function (X, Y, Cx, Ey, wm, N.shifts = 999, radius = 0.5, ...)
 {
     if(!exists("moveTwoCoords")){
-        moveTwoCoords = sbivar:::moveTwoCoords
         buildWeightMat = sbivar:::buildWeightMat
-        sbivarSingle = sbivar:::sbivarSingle
     }
     n = nrow(X);m = nrow(Y)
     obsIxy <- crossprod(X, wm %*% Y)
