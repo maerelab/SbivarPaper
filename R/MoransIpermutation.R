@@ -1,5 +1,5 @@
 MoransIpermutation = function(X, Y, Cx, Ey, etas = eval(formals(sbivarSingle)$etas),
-                              nPerms, normX = "none", normY = "none", pseudoCount = 1e-8, verbose = TRUE){
+                              nPerms, normX = "none", normY = "none", pseudoCount = 1e-8, verbose = FALSE){
     if(verbose){
         cat("Starting Moran's I permutation")
     }
@@ -26,7 +26,7 @@ MoransIpermutation = function(X, Y, Cx, Ey, etas = eval(formals(sbivarSingle)$et
     apply(allPvals, c(1,2), CCT)
 }
 CCtestEtas = function(X, Y, Cx, Ey, nPerms, wo = "Gauss", etas = eval(formals(sbivarSingle)$etas),
-                      normX = "none", normY = "none", pseudoCount = 1e-8, verbose = TRUE){
+                      normX = "none", normY = "none", pseudoCount = 1e-8, verbose = FALSE){
     if(verbose){
         cat("Starting Moran's I random shift")
     }

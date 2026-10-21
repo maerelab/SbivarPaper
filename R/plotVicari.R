@@ -74,7 +74,7 @@ plotVicariGenesMets <- function(genes, mets, size = 0.12, shape = 18, stripTextS
       strip.text.y = element_text(size = stripTextSizeY),
       axis.text = element_blank(), axis.ticks = element_blank()
     )
-  print(p)
+  return(p)
 }
 plotVicariSingle <- function(gene, met, samples = sampleNamesMouse, size = 0.7,
                              shape = 18, stripTextSizeX = 8.5, axisLegendSize = 8.5, stripTextSizeY = 6,

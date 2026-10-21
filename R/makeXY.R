@@ -5,7 +5,7 @@ makeXY = function(xMat, yMat, nSims, distMat = as.matrix(stats::dist(rbind(xMat,
     betaZonesX = NULL, betaZonesY = NULL, betas = NULL,
      scale = FALSE, streakFac = 1, scaleZone = .05,
     outcomeDistrs = rep("gaussian", 2),
-    NBdispVec, scaleVec, nbLibs, gammaLibs){
+    NBdispVec, scaleVec, nbLibs, gammaLibs, rangeYfac = NULL, rangeXslope = NULL){
     what = match.arg(what, choices = spatPats)
     n = nrow(xMat);m = nrow(yMat)
     idX = seq_len(n);idY = seq_len(m)+n
@@ -25,8 +25,15 @@ makeXY = function(xMat, yMat, nSims, distMat = as.matrix(stats::dist(rbind(xMat,
         if(what=="dependentGPsnoSAC"){
             covMatX = diag(n);covMatY = diag(m)
         } else {
-            covMatX = sigmas[1]*(diag(nuggets[1], n) + expKernelNugget(distMat[idX, idX], ranges[1], nuggets[1]))
-            covMatY = sigmas[2]*(diag(nuggets[2], m) + expKernelNugget(distMat[idY, idY], ranges[2], nuggets[2]))
+            if(is.null(rangeYfac) && is.null(rangeXslope)){
+                covMatX = sigmas[1]*(diag(nuggets[1], n) + expKernelNugget(distMat[idX, idX], ranges[1], nuggets[1]))
+                covMatY = sigmas[2]*(diag(nuggets[2], m) + expKernelNugget(distMat[idY, idY], ranges[2], nuggets[2]))
+            } else {
+                covMatX = sigmas[1]*(diag(nuggets[1], n) + expKernelNugget2(xMat, ranges[1], nuggets[1],
+                                                                            rangeYfac = rangeYfac, rangeXslope = rangeXslope))
+                covMatY = sigmas[2]*(diag(nuggets[2], m) + expKernelNugget2(yMat, ranges[2], nuggets[2],
+                                                                            rangeYfac = rangeYfac, rangeXslope = rangeXslope))
+            }
         }
     } else {covMatX=covMatY=NULL}
     if(what=="none"){

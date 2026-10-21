@@ -89,6 +89,16 @@ expKernel = function(distMat, range, thresh = 1e-4, sparse = FALSE){
 expKernelNugget = function(distMat, range, nugget, sparse = FALSE){
     (1-nugget)*expKernel(distMat, range, sparse = sparse)
 }
+expKernel2 = function(xMat, range, rangeYfac = NULL, rangeXslope = NULL){
+    xDist2 = outer(xMat[, 1], xMat[, 1], FUN = "-")^2
+    yDist2 = outer(xMat[, 2], xMat[, 2], FUN = "-")^2
+    out = exp(-(xDist2/(range + outer(xMat[, 1], xMat[, 1], FUN = "+")*rangeXslope)^2+ yDist2/(range*rangeYfac)^2))
+    return(out)
+}
+expKernelNugget2 = function(xMat, range, nugget, rangeYfac, rangeXslope){
+    stopifnot(ncol(xMat)==2)
+    (1-nugget)*expKernel2(xMat, range, rangeYfac, rangeXslope)
+}
 corner = function(x, n = 6, digits = 5){
     round(x[seq_len(n), seq_len(n)], digits = digits)
 }
@@ -240,6 +250,9 @@ bdiagn = function(A, B){
 }
 getPower = function(x, sigLevel = 0.05){
     mean(x<sigLevel, na.rm  =TRUE)
+}
+getFdr = function(x, sigLevel = 0.05, method = "BH"){
+    mean(p.adjust(x, method =  method) < sigLevel, na.rm  =TRUE)
 }
 #Fdrtol correction on p-values, return qvals
 fdrtoolQval = function(pvals, verbose = FALSE, plot = FALSE,...){
