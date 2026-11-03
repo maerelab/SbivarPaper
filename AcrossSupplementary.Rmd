@@ -21,7 +21,7 @@ knitr::opts_chunk$set(
 libs <- c(
   "ggplot2", "reshape2", "xtable", "knitr", "gplots", "openxlsx", "patchwork",
   "parallel", "dplyr", "Matrix", "RANN", "SpatialPack", "stringr", "mvtnorm", "spdep", "ggh4x",
-  "nlme", "NTSS", "peakRAM", "gstat", "SpaGene", "rhdf5", "anndata", "Cardinal", "sbivar", "Seurat", "smoppix", "fdrtool", "nleqslv", "httr", "bispdep", "jsonlite", "spatstat", "lmerTest", "abind", "latticeExtra", "arrow", "pizzarr"
+  "nlme", "NTSS", "peakRAM", "gstat", "SpaGene", "rhdf5", "anndata", "Cardinal", "sbivar", "Seurat", "smoppix", "fdrtool", "nleqslv", "httr", "bispdep", "jsonlite", "spatstat", "lmerTest", "abind", "latticeExtra", "arrow", "pizzarr", "patchwork"
 )
 for (i in libs) {
   suppressPackageStartupMessages(library(i, character.only = TRUE, quietly = TRUE))
@@ -39,7 +39,7 @@ register(MulticoreParam(nCores))
 foo <- lapply(c("GraphsPaper", "Results", "Data", "Data/Godfrey2025", "Data/Vicari2024", "Data/Vicari2024/Stx", "Data/Duchini2026", "Results/landmarks/"), dir.nw)
 ```
 
-```{r defineLabels}
+```{r defineLabels, eval = TRUE}
 spatPats <- selfName(c("none", "independentGPs", "independentZones", "dependentGPs", "dependentStreak", "dependentZones",  "dependentStreakGPs", "dependentZonesGPs"))
 spatPatsShow <- selfName(c("none", "independentGPs", "dependentGPs", "dependentZones", "dependentStreak", "dependentStreakGPs", "dependentZonesGPs"))
 spatPatsLabels <- c("No spatial pattern", "Independent GPs", "Independent zones", "Dependent GPs", "Streak",  "Zones", "Streak + GPs", "Zones + GPs")
@@ -101,7 +101,7 @@ The expectation and maximum absolute value are the same under the randomisation 
 
 For significance testing on $I_{xy}$ we the assume that $\frac{I_{xy}}{\sqrt{\widehat{\text{Var}}(I_{xy})}}$ is asymptotically standard normal. This is justified by theoretical results on univariate Moran's I \parencite{Kelejian2001}, but we also verify it empirically in a small simulation study in the 'none' scenario from the parametric simulations with disjoint coordinate sets, revealing approximate normality of the statistic (\fref{fig:qqnormMoran}).
 
-```{r parSetup}
+```{r parSetup, eval = TRUE}
 xMin <- 0
 xMax <- 1
 nSims <- 5e1
@@ -333,7 +333,7 @@ rm(dat)
 plotxy(xMat, yMat, pchY = "+", cex = 0.8)
 ```
 
-```{r plotDesigns, fig.cap = "Visualisation of the different designs (rows) and outcomes (columns) for the parametric simulation study with disjoint coordinate sets. Outcomes are scaled to the [0,1] range for legibility.\\label{fig:designs}", fig.height = 10.5}
+```{r plotDesigns, fig.cap = "Visualisation of the different designs (rows) and outcomes (columns) for the parametric simulation study with disjoint coordinate sets. Outcomes are scaled to the [0,1] range for legibility.\\label{fig:designs}", fig.height = 8.5}
 B <- 25^2
 xB <- seq(0, 1, length.out = sqrt(B))
 newGrid <- expand.grid(x = xB, y = xB)
@@ -591,7 +591,7 @@ rm(foo)
 
 \hl{\label{pag:anis}In an additional parametric simulation featuring anisotropy and nonstationarity, we generate outcomes according to the "independentGPs" and "dependentGPs" scenarios, but construct the autocorrelation matrices as follows. $\bs\Sigma_x = \sigma^2_x\left(\pi_x\mb I + (1-\pi_x)\exp\left[-\left(\frac{\mb D_{xc}}{l_x+\mb c_1\mb c_1^t\xi}\right)^2-\left(\frac{\mb D_{xe}}{l_x\gamma}\right)^2\right]\right)$ with $\mb D_{xc}$ the distances in the first dimension and $\mb D_{xe}$ the distances in the second, $\gamma \in (0.5,1,2)$ the anisotropy parameter, $\xi \in (0, 0.1, 0.2, 0.3)$ the nonstationarity parameter and $l_x=l_y=0.15$ as before. The parameter combination $\gamma=1$ and $\xi=0$ recovers the isotropic, stationary scenario used throughout the parametric simulations in the main text. The bivariate spatial covariance between $x$ and $y$ is constructed as before. The design is illustrated for all combinations of such parameters in \fref{fig:designsAnis}.}
 
-```{r plotDesignsAnis, fig.cap = "\\hl{Visualisation of the different designs for the parametric simulation study with disjoint coordinate sets under anisotropy and nonstationarity. Rows show the anisotropy parameter $\\gamma$, columns the nonstationarity parameter $\\xi$. Outcomes of the y-variable are shown, scaled to the [0,1] range for legibility.\\label{fig:designsAnis}}", fig.height = 7.5}
+```{r plotDesignsAnis, fig.cap = "\\hl{Visualisation of the different designs for the parametric simulation study with disjoint coordinate sets under anisotropy and nonstationarity. Rows show the anisotropy parameter $\\gamma$, columns the nonstationarity parameter $\\xi$. Outcomes of the y-variable are shown, scaled to the [0,1] range for legibility.\\label{fig:designsAnis}}", fig.height = 6.5}
 RangsYfac = c(1/2, 1, 2)
 RangsSlopeX = c(0, 0.1, 0.2, .3)
 anisGridDes = expand.grid(stringsAsFactors = FALSE, "RangsYfac" = RangsYfac, "RangsSlopeX" = RangsSlopeX)
@@ -609,7 +609,13 @@ ggplot(data = designsAnis, aes(x = x, y = y, col = Outcome)) +
   scale_colour_gradient(low = "yellow", high = "blue") +
   xlab("Coordinate 1") +
   ylab("Coordinate 2") +
-  theme(strip.text.y = element_text(size = 7.5), axis.text.x = element_text(angle = 90))
+  scale_y_continuous(
+    sec.axis = dup_axis(name = "Anisotropy")
+  ) +
+  theme(strip.text.y = element_text(size = 7.5), axis.text.x = element_text(angle = 90),
+        axis.text.y.right  = element_blank(), axis.ticks.y.right = element_blank(),
+        plot.title = element_text(hjust = 0.5))+ 
+    labs(title = "Nonstationarity")
 rm(designsAnis)
 ```
 
@@ -1507,7 +1513,8 @@ ggplot(
   scramAllMultMoltAgg[scramAllMultMoltAgg$Weight %in% c("Raw", "Scaled", "Weighted"), ],
   aes(x = Weight, y = pvalue, col = Method)
 ) +
-  geom_jitter(width = .15, height = 0) +
+ geom_jitter(width = .17, height = 0) +
+ #geom_point()+    
   facet_grid(rows = vars(what), cols = vars(group)) +
   ylab("FDR") +
   xlab("") +
@@ -2053,6 +2060,7 @@ if(!file.exists(disFileAnis <- "Results/disJointResAnis.RData")) {
     names(MoransI_permutation) <- names(CCres) <- namesMat
     pVals <- cbind(
       "MoransI_sbivar" = MoransI[, "pVal"], "GAM" = splineRes[rownames(MoransI), "pVal"],
+      "GP" = gpRes[rownames(MoransI), "pVal"],
       "GAMM" = splineResGAMM[rownames(MoransI), "pVal"], "modTtest" = modtTest[rownames(MoransI), "pVal"], "MoransI_RandomShift" = CCresMoranP[rownames(MoransI)]
     )
     # Match observations
@@ -2103,112 +2111,12 @@ if(!file.exists(disFileAnis <- "Results/disJointResAnis.RData")) {
   save(disjointResAnis, file = disFileAnis)
 } else {
   load(disFileAnis)
-}
-```
-
-```{r disjointresanisgp, eval = FALSE}
-packages = c("spatstat", "mvtnorm", "Matrix",  "nloptr", "parallel", "concaveman",
-             "RANN", "sf", "sp", "spdep", "bispdep","lme4", "lmerTest",
-             "mgcv", "abind", "BiocParallel", "reformulas", "gstat", "smoppix",
-"NTSS", "SpatialPack", "SpaGene", "Rcpp")
-for(p in packages){
-    suppressPackageStartupMessages(library(p, character.only = TRUE,
-                                           quietly = TRUE, verbose = FALSE))
-}
-for(i in list.files("R")){source(file.path("R", i))};rm(i)
-spatPats <- selfName(c("none", "singleGradient", "orthogonalGradient", "independentGPs",
-                       "independentZones", "independentStreak", "dependentGPs", "dependentGPsNeg",
-                       "dependentGPsnoSAC", "localDependence", "sharedGradient", "oppositeGradient",
-                       "dependentStreak", "oppositeStreak", "dependentZones", "oppositeZones", "concentric",
-                       "dependentStreakGPs", "dependentZonesGPs"))
-xMin = 0;xMax = 1
-nSims = 5e1#5e1
-nFeats = 10 #Later 20
-propFeatNull = 0.2
-n = 25^2;m = 900
-nPerms = 3e2
-sigLevel = 0.05
-csGaus = corGaus(form = ~ x + y, nugget = TRUE, value = corVals <- c(1,0.25))#Gaussian correlation structure
-optControl = nlme::lmeControl(opt = "optim", maxIter = 5e2, msMaxIter = 5e2,
-                              niterEM = 1e3, msMaxEval = 1e3)
-Nugs = c(0.25, 0.25);Rangs = c(0.15, 0.15, 0.15);Sigs = c(0.75,0.75,0.15)
-spatPatsShow = selfName(c("none", "independentGPs", "dependentGPs",
-                          "dependentZones", "dependentStreak", "dependentStreakGPs", "dependentZonesGPs"))
-jointGrid = expand.grid(stringsAsFactors = FALSE, "spatPats" = spatPatsShow, "rep" = seq_len(nSims))
-featGrid = expand.grid("i" = seq_len(nFeats), "j" = seq_len(nFeats))
-etaSim = 2e-4
-RangsYfac = c(1/2, 1, 2)
-RangsSlopeX = c(0, 0.1, 0.2, .3)
-register(MulticoreParam(4))
-library(sbivar)
-anisGrid = expand.grid(stringsAsFactors = FALSE, "spatPats" = spatPatsShow[1:3], 
-                       "RangsYfac" = RangsYfac, "RangsSlopeX" = RangsSlopeX, "rep" = seq_len(nSims))
-xMat <- makeCoordGrid(n, xMin, xMax)
-yMat <- makeCoordGrid(m, xMin + 0.03, xMax + 0.03)
-distMat <- as.matrix(stats::dist(rbind(xMat, yMat)))
-idnn_XY <- nn2(yMat, xMat, k = 1)$nn.idx[, 1]
-wm <- sbivar:::buildWeightMat(xMat, xMat, wo = "Gauss", eta = etaSim)
-prepCzaplewski <- prepareCzaplewskiWeights(wm)
-ns <- n / sum(wm)
-fac2 <- (n / ((n - 1) * sum(wm)))^2
-H <- diag(n) - 1 / n
-IxyvarSpatialDMSqrt <- sqrt(fac2 * tr(crossprod(H %*% wm %*% H)))
-listW <- mat2listw(wm, style = "M")
-listWgeary <- listw2U(listW)
-dgr <- as.matrix(spatialreg::as_dgRMatrix_listw(listWgeary))
-idDgr <- which(dgr != 0)
-wc <- spweights.constants(listWgeary, zero.policy = FALSE, adjust.n = TRUE)
-xSeq <- seq(xMin, xMax, length.out = sqrt(n))
-tp <- ppp(xMat[, "x"], xMat[, "y"])
-dir.nw(diranis <- "Results/Anisotropy/")
-disjointResAnisGp <- lapply(seq_len(nrow(anisGrid)),  function(ii) {
-    spatPat <- anisGrid[ii, "spatPats"];rep <- anisGrid[ii, "rep"]
-    rangYfac <- anisGrid[ii, "RangsYfac"];rangSlopeX <- anisGrid[ii, "RangsSlopeX"]
-            if(!file.exists(exFile <- paste0(diranis, "spatPat", spatPat, "_rangYfac", rangYfac, "_rangSlopeX", rangSlopeX, "_rep", rep, "gp.RData"))){
-    dat <- makeXY(xMat, yMat, what = spatPat, distMat = distMat, nSims = nFeats * (1 - propFeatNull), 
-                  nuggets = Nugs, ranges = Rangs, sigmas = Sigs, rangeYfac = rangYfac, rangeXslope = rangSlopeX)
-    datNull <- makeXY(xMat, yMat, what = "none", distMat = distMat, nSims = nFeats * propFeatNull,
-      nuggets = Nugs, ranges = Rangs, sigmas = Sigs)
-    colnames(dat$x) <- paste0(colnames(dat$x), "_TPx")
-    colnames(dat$y) <- paste0(colnames(dat$y), "_TPy")
-    dat$x <- cbind(dat$x, datNull$x)
-    dat$y <- cbind(dat$y, datNull$y)
-    gpRes <- sbivar(dat$x, dat$y,
-      Cx = xMat,
-      Ey = yMat, method = "GP", verbose = FALSE
-    )$result
-    rn = makeRowNames(gpRes)
-    gpRes = gpRes[, "pVal"]
-    names(gpRes) = rn
-    save(gpRes, file  = exFile)
-} else load(exFile)
-    gpRes
- })
-```
-
-```{r gpLoad}
-dir.nw(diranis <- "Results/Anisotropy/")
-gpExist <- sapply(seq_len(nrow(anisGrid)),  function(ii) {
-    spatPat <- anisGrid[ii, "spatPats"];rep <- anisGrid[ii, "rep"]
-    rangYfac <- anisGrid[ii, "RangsYfac"];rangSlopeX <- anisGrid[ii, "RangsSlopeX"]
-    file.exists(exFile <- paste0(diranis, "spatPat", spatPat, "_rangYfac", rangYfac, "_rangSlopeX", rangSlopeX, "_rep", rep, "gp.RData"))
-})
-disjointResAnisGp <- lapply(seq_len(nrow(anisGrid))[gpExist],  function(ii) {
-    spatPat <- anisGrid[ii, "spatPats"];rep <- anisGrid[ii, "rep"]
-    rangYfac <- anisGrid[ii, "RangsYfac"];rangSlopeX <- anisGrid[ii, "RangsSlopeX"]
-    load(paste0(diranis, "spatPat", spatPat, "_rangYfac", rangYfac, "_rangSlopeX", rangSlopeX, "_rep", rep, "gp.RData"))
-    data.frame("pvalue" = gpRes, "featurePair" = names(gpRes))
-})
-moltNewDisAnsiGp <- melt(disjointResAnisGp)
-colnames(moltNewDisAnsiGp) <- c("featurePair", "variable", "value", "id")
-moltNewDisAnsiGp$Method = "GP"
-moltNewDisAnsiGp <- cbind(moltNewDisAnsiGp, anisGrid[rep(which(gpExist), each = nFeats^2), ])
-moltNewDisAnsiGp$variable = NULL 
+} 
 ```
 
 ```{r anisprocess, fig.cap = "\\hl{Type I error (y-axis) for different methods with null distributions in parentheses (colour) for data with different spatial patterns (columns), nonstationarity parameter $\\xi$ (x-axis) and anisotropy parameter $\\gamma$ (rows) in the parametric simulation with anisotropy and nonstationarity. The horizontal dotted line indicates the significance level of 5\\%, [sbivar] indicates methods introduced in this work.}\\label{fig:anisTypeOne}", fig.height = 10.4}
-moltNewDisAnsiOld <- melt(lapply(disjointResAnis, function(x){
-    x$Exist
+moltNewDisAnsiOld <- melt(lapply(disjointResAnis, function(x){ 
+    x$Exist 
     })) 
 colnames(moltNewDisAnsiOld) <- c("featurePair", "Method", "value", "id")
 moltNewDisAnsiNew <- melt(lapply(disjointResAnis, function(x){
@@ -2217,7 +2125,7 @@ moltNewDisAnsiNew <- melt(lapply(disjointResAnis, function(x){
     }))
 colnames(moltNewDisAnsiNew) <- c("featurePair", "Method", "value", "id")
 moltNewDisAnsi <- rbind(cbind(rbind(moltNewDisAnsiOld, moltNewDisAnsiNew), 
-                        anisGrid[c(moltNewDisAnsiOld[, "id"], moltNewDisAnsiNew[, "id"]), ]), moltNewDisAnsiGp)
+                        anisGrid[c(moltNewDisAnsiOld[, "id"], moltNewDisAnsiNew[, "id"]), ]))
 moltNewDisAnsi <- factorizeDf(moltNewDisAnsi)
 moltExistSplitFeat <- simplify2array(strsplit(as.character(moltNewDisAnsi$featurePair), "__"))
 moltExistSplitFeat[1, ] <- gsub("_", "", gsub("X", "", gsub("x", "", moltExistSplitFeat[1, ])))
@@ -2236,7 +2144,7 @@ ggplot(data = moltNewDisAnsiPagg[moltNewDisAnsiPagg$Method %in% methLabelsShow &
   scale_colour_manual(values = powerColours) +
   facet_grid(rows = vars(RangsYfac), cols = vars(spatPats), scale = "free_y") +
   geom_hline(yintercept = sigLevel, linetype = "dotted") +
-  ylab("Type I error") +
+  ylab("Type I error") + ylim(c(0,1)) +
   geom_line(linewidth = .5) +
   xlab(expression(paste("Nonstationarity parameter (", xi, ")"))) + ylim(c(0, 1)) +
   theme(
@@ -2246,14 +2154,19 @@ ggplot(data = moltNewDisAnsiPagg[moltNewDisAnsiPagg$Method %in% methLabelsShow &
     axis.title = element_text(size = 10),
     legend.text = element_text(size = 8),
     legend.title = element_text(size = 11),
-    legend.position = "top"
+    legend.position = "top",
+    axis.text.y.right  = element_blank(), 
+    axis.ticks.y.right = element_blank()
   ) +
   guides(color = guide_legend(nrow = 4), 
-         linetype =  guide_legend(nrow = 3, title = expression(paste("Anisotropy\nparameter (", gamma, ")"))))
+         linetype =  guide_legend(nrow = 3, title = expression(paste("Anisotropy\nparameter (", gamma, ")")))) +
+      scale_y_continuous(
+    sec.axis = dup_axis(name = "Anisotropy")
+  )
 ```
 
 ```{r anispower, fig.cap = "\\hl{Power (y-axis) for different methods with null distributions in parentheses (colour) for data generated as dependent GPs, nonstationarity parameter $\\xi$ (x-axis) and anisotropy parameter $\\gamma$ (rows) in the parametric simulation with anisotropy and nonstationarity. The horizontal dotted line indicates the significance level of 5\\%, [sbivar] indicates methods introduced in this work.}\\label{fig:anisPower}", fig.height = 10.4}
-ggplot(data = moltNewDisAnsiPagg[moltNewDisAnsiPagg$Method %in% methLabelsShow & moltNewDisAnsiPagg$what %in% c("Power"), ], aes(col = Method, y = value, x = RangsSlopeX)) +
+ggplot(data = moltNewDisAnsiPagg[moltNewDisAnsiPagg$Method %in% methLabelsShow & moltNewDisAnsiPagg$what %in% c("Power"), ], aes(col = Method, y = value, x = RangsSlopeX)) + 
   scale_colour_manual(values = powerColours) +
   facet_grid(rows = vars(RangsYfac), cols = vars(spatPats), scale = "free_y") +
   geom_hline(yintercept = sigLevel, linetype = "dotted") +
@@ -2266,10 +2179,15 @@ ggplot(data = moltNewDisAnsiPagg[moltNewDisAnsiPagg$Method %in% methLabelsShow &
     axis.title = element_text(size = 10),
     legend.text = element_text(size = 8),
     legend.title = element_text(size = 11),
-    legend.position = "top"
+    legend.position = "top",
+    axis.text.y.right  = element_blank(), 
+    axis.ticks.y.right = element_blank()
   ) +
    guides(color = guide_legend(nrow = 4), 
-         linetype =  guide_legend(nrow = 3, title = expression(paste("Anisotropy parameter (", gamma, ")"))))
+         linetype =  guide_legend(nrow = 3, title = expression(paste("Anisotropy parameter (", gamma, ")")))) + 
+  scale_y_continuous(
+    sec.axis = dup_axis(name = "Anisotropy")
+  )
 ```
 
 ```{r timingsN, fig.cap = "Runtimes (y-axis, in seconds) for different methods that control type I error rate (colour) and increasing number of spots (x-axis) with joint coordinate sets in the 'No spatial pattern' scenario. Bivariate GPs and GAMMs were not run for the higher spot numbers.\\label{fig:timingsN}", fig.height = 3.25, fig.width = 6.5}
@@ -2557,7 +2475,7 @@ bear = expand.grid(attr(ReplicateAggFdr, "dimnames"))[id,]
 colnames(bear) = c("Method", "spatPat", "Weight")
 ReplicateAgg = rbind(ReplicateAgg, data.frame(bear, what = "FDR", "value" = FdrAgg))
 ReplicateAgg$what = factor(ReplicateAgg$what, levels = c("Type I error", "Power", "FDR"), ordered = TRUE)
-ggplot(data = ReplicateAgg[ReplicateAgg$Weight %in% c("Raw", "Scaled", "Weighted"), ], aes(col = Method, x = Weight, y = value)) +
+ggplot(data = ReplicateAgg[(ReplicateAgg$Weight %in% c("Raw", "Scaled", "Weighted")) & !(ReplicateAgg$spatPat %in% spatLabsNull & ReplicateAgg$what == "Power"), ], aes(col = Method, x = Weight, y = value)) +
   facet_grid(cols = vars(spatPat), rows = vars(what)) +
   geom_point() + xlab("Weighing scheme") +
   ylab("Power/Type I error/FDR") +
@@ -3254,11 +3172,15 @@ rm(vicariMulti, vicariMulti2)
 
 # Recommendations
 
+\begin{landscape}
 \begin{table}
 \footnotesize
-\begin{tabularx}{1.0\textwidth}{|>{\setlength\hsize{0.82\hsize}\setlength\linewidth{\hsize}}X|>{\setlength\hsize{0.9\hsize}\setlength\linewidth{\hsize}}X|>{\setlength\hsize{1.28\hsize}\setlength\linewidth{\hsize}}X|}
+\begin{tabularx}{1.45\textwidth}{|>{\setlength\hsize{0.75\hsize}\setlength\linewidth{\hsize}}X|>
+{\setlength\hsize{1.1\hsize}\setlength\linewidth{\hsize}}X|>
+{\setlength\hsize{1.15\hsize}\setlength\linewidth{\hsize}}X|>
+{\setlength\hsize{1\hsize}\setlength\linewidth{\hsize}}X|}
 \hline
-Method & Strengths & Weaknesses \\
+Method & Strengths & Weaknesses & \hl{When to use} \\
 \hline
 Methods with permutation or randomisation null distributions: \textit{SpaGene}, \textit{LIANA+}, Geary's C, Lee's L and some versions of bivariate Moran's I (\textit{SpatialDM}, permutation, randomisation) &
 \begin{itemize}
@@ -3267,6 +3189,8 @@ Methods with permutation or randomisation null distributions: \textit{SpaGene}, 
 \begin{itemize}
 \item{Geary's C and Lee's L require spot matching for differing resolutions}
 \item {Lack robustness to SAC, leading to spurious significances for bivariate associations}
+\end{itemize} & \begin{itemize}
+\item \hl{Not recommended}
 \end{itemize}\\
 \hline
 Pearson correlation  & 
@@ -3277,6 +3201,8 @@ Pearson correlation  &
 \begin{itemize}
  \item{Requires spot matching for differing resolutions}
  \item{Yields spurious significances if SAC is present in both variables}
+\end{itemize} & \begin{itemize}
+\item \hl{Not recommended}
 \end{itemize}\\
 \hline
 Modified t-test &
@@ -3286,6 +3212,9 @@ Modified t-test &
 \end{itemize} &
 \begin{itemize}
 \item{Requires spot matching for differing resolutions}
+\end{itemize} & \begin{itemize}
+\item \hl{Data are homoskedastic or can be properly normalized}
+\item \hl{Both modalities were measured at the same spots}
 \end{itemize}\\
 \hline
 Random shift test &
@@ -3297,6 +3226,8 @@ Random shift test &
 \item Computationally demanding
 \item The p-values are discretized by the number of random shifts
 \item Limited power as some spatial association is retained in the random shifts
+\end{itemize} & \begin{itemize}
+\item \hl{Not recommended}
 \end{itemize}\\
 \hline
 Bivariate Moran's I (independence) [sbivar] &
@@ -3307,7 +3238,8 @@ Bivariate Moran's I (independence) [sbivar] &
 \begin{itemize}
 \item Weight matrix needs to be user defined, determining sensitivity to different types of spatial patterns
 \item Affected by heteroskedasticity
-\end{itemize}\\
+\end{itemize} & \begin{itemize}
+\item \hl{Data are homoskedastic or can be properly normalized} \end{itemize}\\
 \hline
 Bivariate Gaussian processes (GPs) [sbivar] &
 \begin{itemize}
@@ -3319,6 +3251,11 @@ Bivariate Gaussian processes (GPs) [sbivar] &
 \item Does not provide a measure of bivariate association strength, only a p-value
 \item Relies on parametric assumptions
 \item Complex mathematical derivation
+\end{itemize} &
+\begin{itemize}
+\item \hl{For single-image analysis}
+\item \hl{A well-fitting outcome distribution is available or data can be properly normalized}
+\item \hl{If computationally feasible}
 \end{itemize}\\
 \hline
 Generalized additive models (GAMs) [sbivar] &
@@ -3332,11 +3269,16 @@ Generalized additive models (GAMs) [sbivar] &
 \item Struggles with hotspots and edge effects
 \item Relies on parametric assumptions
 \item Version accounting for residual SAC in a GAMM is very slow
+\end{itemize} &
+\begin{itemize}
+\item \hl{A well-fitting outcome distribution is available or data can be properly normalized}
+\item \hl{If all spatial structure is captured by splines, use GAMS, otherwise GAMMs if computationally feasible}
 \end{itemize}\\
 \hline
 \end{tabularx}
-\caption{\label{tab:overview}Methods to test for bivariate spatial association considered in this study, with strengths and weaknesses. [sbivar] indicates methods proposed or improved in this work and available in the \sbivar R-package.} 
+\caption{\label{tab:overview}Methods to test for bivariate spatial association considered in this study, with strengths, weaknesses \hl{and our recommendation}. [sbivar] indicates methods proposed or improved in this work and available in the \sbivar R-package.} 
 \end{table}
+\end{landscape}
 
 \clearpage
 
