@@ -63,7 +63,7 @@ timeLevels <- c("Elapsed_Time_sec", "Peak_RAM_Used_MiB")
 
 ### Bivariate Moran's I \label{sec:moransI}
 
-Bivariate Moran's I is defined for two vectors $\mb x$ and $\mb y$ as $I_{xy} = \sum_{i=1}^n\sum_{j=1}^mw_{ij}x_iy_j = \mb x^t \mb W \mb y$. When testing only for spatial association between spots, under the randomisation null hypothesis for joint coordinate sets, $I_{xy}$ has an expected value of $E(I_{xy}) = \frac{\Cor{x, y}}{(n-1)}$ \parencite{Czaplewski1993}. If zero correlation within the same spots is also considered part of the null hypothesis, as we do throughout the article, than the expectation equals 0. Several versions of the variance of bivariate Moran's I exist for the case of joint coordinate sets. \textcite{Czaplewski1993} provides the variance under the randomisation null hypothesis. \textcite{Li2023} provides a variance assuming no SAC in either outcome variable in their \textit{SpatialDM} method, as do \textcite{DeTomaso2021}. \textcite{Miller2021} employ bivariate Moran's I in their \textit{MERINGUE} method, using permutations to determine significance, as does \textcite{Wartenberg1985}.
+Bivariate Moran's I is defined for two vectors $\mb x$ and $\mb y$ as $I_{xy} = \sum_{i=1}^n\sum_{j=1}^mw_{ij}x_iy_j = \mb x^t \mb W \mb y$. When testing only for spatial association between spots, under the randomisation null hypothesis for joint coordinate sets with _n_ spots, $I_{xy}$ has an expected value of $E(I_{xy}) = \frac{\Cor{x, y}}{(n-1)}$ \parencite{Czaplewski1993}. If zero correlation within the same spots is also considered part of the null hypothesis, as we do throughout the article, than the expectation equals 0. Several versions of the variance of bivariate Moran's I exist for the case of joint coordinate sets. \textcite{Czaplewski1993} provides the variance under the randomisation null hypothesis. \textcite{Li2023} provides a variance assuming no SAC in either outcome variable in their \textit{SpatialDM} method, as do \textcite{DeTomaso2021}. \textcite{Miller2021} employ bivariate Moran's I in their \textit{MERINGUE} method, using permutations to determine significance, as does \textcite{Wartenberg1985}.
 
 ### The modified t-test \label{sec:modTtest}
 
@@ -1531,7 +1531,7 @@ baa <- gc(verbose = FALSE)
 
 #### Single-image analysis
 
-\fref{fig:MoransIVar} demonstrates empirically that our variance estimator $tr(\mb W^t \bs \Sigma_x \mb W \bs \Sigma_y)$ is accurate, whereas the variance estimator assuming i.i.d. observations ($tr(\mb W^t \mb W)$ as in *SpatialDM* by \textcite{Li2023} and by \textcite{DeTomaso2021}) underestimates the variance in presence of SAC. \fref{fig:qqParSim} shows qq-plots of the p-values for all methods the null scenarios. \fref{fig:PearsonTypeIerror} demonstrates how Pearson correlation and other methods suffer from type I error inflation only when there is SAC in both variables. \fref{fig:timingsN} shows average time consumption for the different methods on simulated datasets in the "no spatial pattern" scenario with joint coordinate sets for the number of spots sizes increasing as `r samSizesJoint`, over 20 replicates, on an Intel Core i5-11400H 2.70GHz processor.
+\fref{fig:MoransIVar} demonstrates empirically that our variance estimator $tr(\mb W^t \bs \Sigma_x \mb W \bs \Sigma_y)$ is accurate, whereas the variance estimator assuming i.i.d. observations ($tr(\mb W^t \mb W)$ as in *SpatialDM* by \textcite{Li2023} and by \textcite{DeTomaso2021}) underestimates the variance in presence of SAC. \fref{fig:qqParSim} shows qq-plots of the p-values for all methods the null scenarios. \fref{fig:PearsonTypeIerror} demonstrates how Pearson correlation and other methods suffer from type I error inflation only when there is SAC in both variables. \fref{fig:timingsN} shows average time consumption for the different methods on simulated datasets in the "no spatial pattern" scenario with joint coordinate sets for the number of spots increasing as `r samSizesJoint`, over 20 replicates, on an Intel Core i5-11400H 2.70GHz processor.
 
 ```{r moranVariances, fig.cap = "Empirical variances of bivariate Moran's I (y-axis, dashed black line) as a function of number of spots (x-axis), decay parameter of the weight matrix (colums) and spatial pattern under the independence null (rows). The black dots indicate the estimated variance under the randomisation null, the brown dots are \\sbivar's estimates under the independence null. The y-axis is on the log scale.\\label{fig:MoransIVar}"}
 jointGridAltNull <- expand.grid(stringsAsFactors = FALSE, "samSize" = samSizesJoint, "spatPats" = spatPatsShow[1:2])
@@ -1793,7 +1793,7 @@ ggplot(
 rm(id)
 ```
 
-```{r falsePosPearsonCor, fig.height = 4.75, fig.width = 8, fig.cap = "Type I error (y-axis) for different analysis methods (colour) as a function of whether there is no SAC, SAC in one or in both variables (x-axis), for outcomes generated as independent GPs. The horizontal dotted line indicates the significance level of 5\\%.\\label{fig:PearsonTypeIerror}"}
+```{r falsePosPearsonCor, fig.height = 6.4, fig.width = 6.7, fig.cap = "\\hl{Type I error (y-axis) for different analysis methods (x-axis, colour) as a function of whether there is no SAC, SAC in one or in both variables (rows), for outcomes generated as independent GPs. The horizontal dotted line indicates the significance level of 5\\%.\\label{fig:PearsonTypeIerror}}"}
 namesTmp <- paste0("feat", featGridPower$i, "X__", "feat", featGridPower$j, "y")
 moltExistOldPear <- melt(lapply(jointRes, function(x) {
   tmp <- t(sapply(x$Exist, function(y) y[, "pVal"]))
@@ -1815,14 +1815,14 @@ moltExistOldPearAgg$TP <- factor(moltExistOldPearAgg$TP,
   labels = c("No SAC", "SAC in\none variable", "SAC in\nboth variables"), ordered = TRUE
 )
 moltExistOldPearAgg <- factorizeDf(moltExistOldPearAgg)
-ggplot(data = moltExistOldPearAgg[moltExistOldPearAgg$spatPats == "Independent GPs" & moltExistOldPearAgg$Method %in% methLabelsShow, ], aes(y = value, x = TP, col = Method)) +
-  facet_grid(cols = vars(spatPats), scale = "free_y") +
+ggplot(data = moltExistOldPearAgg[moltExistOldPearAgg$spatPats == "Independent GPs" & 
+                                      moltExistOldPearAgg$Method %in% methLabelsShow, ], aes(y = value, x = Method, col = Method)) +
+  facet_grid(cols = vars(spatPats), rows = vars(TP), scale = "free_y") +
   scale_colour_manual(values = powerColours) +
   geom_hline(yintercept = sigLevel, linetype = "dotted") +
-  ylab("Type I error") +
-  geom_jitter(width = 0.36, size = 1, height = 0) +
-  xlab("") +
-  theme(strip.text = element_text(size = 7.5), legend.position = "top", legend.text = element_text(size = 8)) +
+  ylab("Type I error") + geom_point(size = 1) + xlab("") + ylim(c(0,1)) +
+  theme(strip.text = element_text(size = 7.5), legend.position = "top", 
+        legend.text = element_text(size = 8), axis.text.x = element_text(angle=90)) +
   guides(color = guide_legend(nrow = 4))
 ```
 
@@ -2478,7 +2478,7 @@ ReplicateAgg$what = factor(ReplicateAgg$what, levels = c("Type I error", "Power"
 ggplot(data = ReplicateAgg[(ReplicateAgg$Weight %in% c("Raw", "Scaled", "Weighted")) & !(ReplicateAgg$spatPat %in% spatLabsNull & ReplicateAgg$what == "Power"), ], aes(col = Method, x = Weight, y = value)) +
   facet_grid(cols = vars(spatPat), rows = vars(what)) +
   geom_point() + xlab("Weighing scheme") +
-  ylab("Power/Type I error/FDR") +
+  ylab("Type I error/Power/FDR") +
   theme(axis.text.x = element_text(angle = 90), strip.text = element_text(size = 7), legend.position = "top") +
   geom_hline(yintercept = sigLevel, linetype = "dotted") +
   scale_colour_manual(values = powerColours)
@@ -2786,16 +2786,11 @@ rm(dfFoo)
 klkGAMs <- base::do.call(rbind, lapply(samplesGodfrey, function(yy) {
   tmp <- intersect(rownames(realFitsGodfrey[[yy]]$GAM), paste0(KLKgenes, "__", met))
   baa <- realFitsGodfrey[[yy]]$GAM[tmp, ]
-  colnames(baa)[1:3] <- c("Correlation", "P.value", "Adjusted.P.value")
-  if (length(tmp)) data.frame("Sample" = yy, "Gene" = getGenes(tmp), baa[, c("Correlation", "Adjusted.P.value")])
+  colnames(baa)[1:3] <- c("Correlation", "P.value", "Adjusted.p.value")
+  if (length(tmp)) data.frame("Sample" = yy, "Gene" = getGenes(tmp), baa[, c("Correlation", "Adjusted.p.value")])
 }))
-print.xtable(comment = FALSE, xtable(klkGAMs[klkGAMs[, "Adjusted.P.value"] < sigLevel, ], caption = "\\label{tab:klk}Significant correlations of \\textit{KLK} genes with PI 34:1 estimated by GAMs with adjusted p-values for all Godfrey samples. Only KLK10 in BC\\_515\\_Section\\_1 and KLK13 in LC\\_091 are also significant according to Moran's I (independence)", display = c("s", "s", "s", "f", "e")), include.rownames = FALSE)
-klkMorans <- base::do.call(rbind, lapply(samplesGodfrey, function(yy) {
-  tmp <- intersect(rownames(realFitsGodfrey[[yy]]$Moran), paste0(KLKgenes, "__", met))
-  data.frame("Sample" = yy, realFitsGodfrey[[yy]]$Moran[tmp, ])
-}))
-foo <- klkMorans[klkMorans[, "pAdj"] < sigLevel, ]
-rm(klkGAMs, klkMorans, foo)
+print.xtable(comment = FALSE, xtable(klkGAMs[klkGAMs[, "Adjusted.p.value"] < sigLevel, ], caption = "\\label{tab:klk}Significant correlations of \\textit{KLK} genes with PI 34:1 estimated by GAMs with adjusted p-values for all Godfrey samples. Only KLK10 in BC\\_515\\_Section\\_1 and KLK13 in LC\\_091 are also significant according to Moran's I (independence).", display = c("s", "s", "s", "f", "e")), include.rownames = FALSE)
+rm(klkGAMs)
 ```
 
 ```{r godfreycancermasks, fig.cap = "Godfrey data sections (rows) coloured by pathologists' annotation of the spots.\\label{fig:GodfreyPatho}", fig.height = 9}
@@ -3266,7 +3261,6 @@ Generalized additive models (GAMs) [sbivar] &
 \end{itemize} &
 \begin{itemize}
 \item Low power to detect short-range bivariate spatial association
-\item Struggles with hotspots and edge effects
 \item Relies on parametric assumptions
 \item Version accounting for residual SAC in a GAMM is very slow
 \end{itemize} &
